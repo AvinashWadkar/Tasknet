@@ -1,15 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InitialAvatar, StatusBadge, OverdueBadge } from './shared'
 import { api } from './api'
-import type { Me, TeamData, TeamEmployee, TreeNode } from './types'
+import type { Me, TeamData, TeamEmployee, TeamTask, TaskStatus } from './types'
 import { fmtDate } from '@/lib/dates'
-import { cn } from '@/lib/utils'
 import {
   Users,
   ListTodo,
@@ -21,71 +19,6 @@ import {
   Search,
   Network,
 } from 'lucide-react'
-
-function TreeNodeView({
-  node,
-  isMe,
-  depth,
-  onOpenEmployee,
-}: {
-  node: TreeNode
-  isMe: boolean
-  depth: number
-  onOpenEmployee?: (id: string) => void
-}) {
-  const [open, setOpen] = useState(depth < 2)
-  const hasChildren = node.children.length > 0
-
-  return (
-    <div className={cn(depth > 0 && 'ml-4 border-l-2 border-slate-100 pl-4')}>
-      <div
-        className={cn(
-          'mb-1.5 flex items-center gap-2 rounded-xl border bg-white px-3 py-2 shadow-sm transition hover:shadow',
-          isMe ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200' : 'border-slate-200'
-        )}
-      >
-        {hasChildren ? (
-          <button
-            onClick={() => setOpen((o) => !o)}
-            className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label={open ? 'Collapse' : 'Expand'}
-          >
-            {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-        ) : (
-          <span className="w-5" />
-        )}
-        <InitialAvatar name={node.name} className="h-8 w-8 text-[10px]" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-800">
-            {node.name}
-            {isMe && <span className="ml-1.5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">YOU</span>}
-          </p>
-          <p className="truncate text-xs text-slate-500">
-            {node.designation} · {node.employeeCode}
-          </p>
-        </div>
-        {hasChildren && (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-            {node.children.length} report{node.children.length > 1 ? 's' : ''}
-          </span>
-        )}
-        {onOpenEmployee && !isMe && node.id !== 'ORG' && (
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-emerald-700" onClick={() => onOpenEmployee(node.id)}>
-            View
-          </Button>
-        )}
-      </div>
-      {hasChildren && open && (
-        <div className="mb-2">
-          {node.children.map((c) => (
-            <TreeNodeView key={c.id} node={c} isMe={false} depth={depth + 1} onOpenEmployee={onOpenEmployee} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function EmployeeRow({
   emp,
@@ -166,6 +99,92 @@ function EmployeeRow({
   )
 }
 
+/** A task aggregated across all of its assignees in the downline. */
+interface FlatTask {
+  id: string
+  title: string
+  description: string | null
+  dueDate: string
+  assignedBy: string
+  assignees: { name: string; status: TaskStatus }[]
+  completedCount: number
+  status: TaskStatus
+  overdue: boolean
+}
+
+function flattenTasks(employees: TeamEmployee[]): FlatTask[] {
+  const map = new Map<string, FlatTask>()
+  for (const emp of employees) {
+    for (const t of emp.tasks) {
+      let ft = map.get(t.id)
+      if (!ft) {
+        ft = {
+          id: t.id,
+          title: t.title,
+          description: t.description ?? null,
+          dueDate: t.dueDate,
+          assignedBy: t.assignedBy,
+          assignees: [],
+          completedCount: 0,
+          status: 'PENDING',
+          overdue: false,
+        }
+        map.set(t.id, ft)
+      }
+      ft.assignees.push({ name: emp.name, status: t.status })
+      if (t.status === 'COMPLETED') ft.completedCount++
+    }
+  }
+  const out = [...map.values()]
+  for (const ft of out) {
+    // Aggregate status across assignees
+    if (ft.completedCount === ft.assignees.length) ft.status = 'COMPLETED'
+    else if (ft.completedCount > 0 || ft.assignees.some((a) => a.status === 'IN_PROGRESS')) ft.status = 'IN_PROGRESS'
+    else ft.status = 'PENDING'
+    // Aggregate overdue: due in the past and not everyone finished
+    ft.overdue = new Date(ft.dueDate) < new Date() && ft.completedCount < ft.assignees.length
+  }
+  // Earliest due first (overdue naturally floats to the top)
+  out.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  return out
+}
+
+function TaskRow({ task, onOpenTask }: { task: FlatTask; onOpenTask: (id: string) => void }) {
+  const shown = task.assignees.slice(0, 4)
+  const extra = task.assignees.length - shown.length
+  return (
+    <button
+      onClick={() => onOpenTask(task.id)}
+      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/30 hover:shadow"
+      aria-label={`Task: ${task.title}`}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-slate-800">{task.title}</p>
+        <p className="truncate text-xs text-slate-500">
+          Due {fmtDate(task.dueDate)} · assigned by {task.assignedBy}
+        </p>
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="flex -space-x-1.5">
+            {shown.map((a) => (
+              <InitialAvatar key={a.name} name={a.name} className="h-5 w-5 text-[8px] ring-2 ring-white" />
+            ))}
+            {extra > 0 && (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[8px] font-bold text-slate-600 ring-2 ring-white">
+                +{extra}
+              </span>
+            )}
+          </div>
+          <span className="truncate text-[11px] font-medium text-slate-400">
+            {task.assignees.length} assignee{task.assignees.length > 1 ? 's' : ''} · {task.completedCount}/{task.assignees.length} done
+          </span>
+        </div>
+      </div>
+      {task.overdue && <OverdueBadge />}
+      <StatusBadge status={task.status} className="shrink-0" />
+    </button>
+  )
+}
+
 export function TeamView({
   me,
   refreshKey,
@@ -178,17 +197,8 @@ export function TeamView({
   const [data, setData] = useState<TeamData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [search, setSearch] = useState('')
-
-  /** From the hierarchy tree: expand + scroll to that employee's status row. */
-  function openEmployeeFromTree(id: string) {
-    setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
-    requestAnimationFrame(() => {
-      document
-        .getElementById(`emp-row-${id}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
-  }
+  const [empSearch, setEmpSearch] = useState('')
+  const [taskSearch, setTaskSearch] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -200,18 +210,34 @@ export function TeamView({
     }
   }, [refreshKey, me.id])
 
-  const filtered = useMemo(() => {
-    if (!data) return []
-    const q = search.trim().toLowerCase()
-    if (!q) return data.employees
-    return data.employees.filter(
+  const employees = useMemo(() => data?.employees ?? [], [data])
+
+  const filteredEmployees = useMemo(() => {
+    const q = empSearch.trim().toLowerCase()
+    if (!q) return employees
+    return employees.filter(
       (e) =>
         e.name.toLowerCase().includes(q) ||
         e.employeeCode.toLowerCase().includes(q) ||
         e.designation.toLowerCase().includes(q) ||
         e.process.toLowerCase().includes(q)
     )
-  }, [data, search])
+  }, [employees, empSearch])
+
+  // Every task the downline is working on — deduped across assignees
+  const allTasks = useMemo(() => flattenTasks(employees), [employees])
+
+  const filteredTasks = useMemo(() => {
+    const q = taskSearch.trim().toLowerCase()
+    if (!q) return allTasks
+    return allTasks.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q) ||
+        t.assignedBy.toLowerCase().includes(q) ||
+        t.assignees.some((a) => a.name.toLowerCase().includes(q))
+    )
+  }, [allTasks, taskSearch])
 
   const totals = data?.totals
   const statCards = totals
@@ -233,7 +259,7 @@ export function TeamView({
           {data?.scope === 'org' ? 'Organization View' : 'My Team View'}
         </h2>
         <p className="text-sm text-slate-500">
-          Employee-wise task status for everyone in your reporting chain — downline only.
+          Employee-wise status and every task your downline is working on — click any task to see who&apos;s done and who&apos;s pending.
         </p>
       </div>
 
@@ -268,29 +294,26 @@ export function TeamView({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-5">
+            {/* Employee-wise Task Status (left) */}
             <Card className="border-slate-200/80 shadow-sm lg:col-span-2">
-              <CardContent className="p-4">
-                <h3 className="mb-3 font-semibold text-slate-900">Reporting Hierarchy</h3>
-                <div className="max-h-[32rem] overflow-y-auto pr-1 [scrollbar-width:thin]">
-                  <TreeNodeView node={data.tree} isMe={data.scope === 'team'} depth={0} onOpenEmployee={openEmployeeFromTree} />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-slate-200/80 shadow-sm lg:col-span-3">
               <CardContent className="p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold text-slate-900">Employee-wise Task Status</h3>
-                  <div className="relative w-full sm:w-64">
+                  <div className="relative w-full sm:w-52">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input placeholder="Search employees…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+                    <Input
+                      placeholder="Search employees…"
+                      className="pl-8"
+                      value={empSearch}
+                      onChange={(e) => setEmpSearch(e.target.value)}
+                    />
                   </div>
                 </div>
                 <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
-                  {filtered.length === 0 ? (
+                  {filteredEmployees.length === 0 ? (
                     <p className="py-8 text-center text-sm text-slate-400">No employees match your search.</p>
                   ) : (
-                    filtered.map((emp) => (
+                    filteredEmployees.map((emp) => (
                       <EmployeeRow
                         key={emp.id}
                         emp={emp}
@@ -306,6 +329,39 @@ export function TeamView({
                         onOpenTask={onOpenTask}
                       />
                     ))
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* All downline tasks (right) */}
+            <Card className="border-slate-200/80 shadow-sm lg:col-span-3">
+              <CardContent className="p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-slate-900">
+                    All Tasks
+                    <span className="ml-1.5 text-sm font-normal text-slate-400">({filteredTasks.length})</span>
+                  </h3>
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    <Input
+                      placeholder="Search tasks by any keyword…"
+                      className="pl-8"
+                      value={taskSearch}
+                      onChange={(e) => setTaskSearch(e.target.value)}
+                      aria-label="Search tasks"
+                    />
+                  </div>
+                </div>
+                <div className="max-h-[32rem] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                  {filteredTasks.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-slate-400">
+                      {allTasks.length === 0
+                        ? 'No tasks in your downline yet.'
+                        : 'No tasks match your search.'}
+                    </p>
+                  ) : (
+                    filteredTasks.map((t) => <TaskRow key={t.id} task={t} onOpenTask={onOpenTask} />)
                   )}
                 </div>
               </CardContent>

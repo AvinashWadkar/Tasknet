@@ -59,3 +59,19 @@ Stage Summary:
 - New: hierarchy tree is now interactive — View jumps to the employee's task status row.
 - Visibility rule proven at API level: upline sees downline (200), downline blocked from team data and upline tasks (403).
 - Note: Priya (EMP003) no longer has the default password (changed during earlier testing; unknown to log). Admin can reveal or reset it via Admin → User Management (Task 2 feature).
+
+---
+Task ID: 4
+Agent: Z.ai Code (main)
+Task: Team View redesign per user request — remove hierarchy tree; Employee-wise Task Status to the LEFT; on the RIGHT a searchable list of ALL tasks the downline is working on (keyword search + click-to-see-task-status).
+
+Work Log:
+- /api/team route: EmpTask now includes task description (for keyword search); types.ts TeamTask gained description field.
+- team-view.tsx rewritten: TreeNodeView removed entirely. New layout = stat cards + two panels: LEFT "Employee-wise Task Status" (unchanged expandable rows + employee search), RIGHT "All Tasks (n)".
+- All Tasks panel: flattens + dedupes employees' tasks into a task-wise list (a task shared by N employees appears once). Each row: title, due date, assigner, overlapping assignee avatars (+N overflow), "N assignees · X/Y done", aggregated status badge + Overdue badge. Sorted by earliest due (overdue floats to top). Keyword search matches title, description, assigner, and assignee names.
+- Aggregation logic: all assignees COMPLETED → Completed; any completed or any in-progress → In Progress; else Pending; overdue if past due and not everyone finished. (Initially partial-done showed "Pending"; fixed so 1/2 done reads "In Progress".)
+- Verified via Agent Browser as Suresh (EMP005): tree gone; 6 employees left, 6 deduped tasks right; search "report" → 1 (title), "rahul" → 4 (assignee), "Suresh Kumar" → 2 (assigner); clicked "Prepare training material for new joiners" → detail dialog with ASSIGNED TO(3) individual statuses + COMPLETE HISTORY; MIS report (1/2 done) shows Overdue + In Progress; mobile 390px stacks cleanly; lint clean; no console errors.
+
+Stage Summary:
+- Team View is now task-first: employee-wise status (left) + keyword-searchable all-tasks list (right), click any task for full status/history. Hierarchy tree removed from UI (API tree payload still computed, harmless).
+- Aggregated per-task status gives managers an instant portfolio view of downline work.

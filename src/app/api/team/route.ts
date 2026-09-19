@@ -106,6 +106,7 @@ export async function GET() {
   type EmpTask = {
     id: string
     title: string
+    description: string | null
     dueDate: string
     status: string
     assignedBy: string
@@ -150,6 +151,7 @@ export async function GET() {
     emp.tasks.push({
       id: a.task.id,
       title: a.task.title,
+      description: a.task.description,
       dueDate: a.task.dueDate.toISOString(),
       status: a.status,
       assignedBy: a.task.creator.name,

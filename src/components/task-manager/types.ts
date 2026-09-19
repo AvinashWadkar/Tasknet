@@ -71,6 +71,7 @@ export interface DirectoryUser {
 export interface TeamTask {
   id: string
   title: string
+  description?: string | null
   dueDate: string
   status: TaskStatus
   assignedBy: string
