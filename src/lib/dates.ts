@@ -117,3 +117,22 @@ export function istDueDate(dateStr: string, timeStr?: string): Date {
   const time = timeStr && /^\d{2}:\d{2}$/.test(timeStr) ? timeStr : '18:00'
   return new Date(`${dateStr}T${time}:00+05:30`)
 }
+
+/**
+ * Human-readable "delayed by" duration between an instant and now.
+ * Absolute time difference (timezone-free). Returns '' when not in the past.
+ * e.g. "2 days 5 hrs", "7 hrs", "40 mins"
+ */
+export function delayLabel(due: string | Date, now: Date = new Date()): string {
+  const diff = now.getTime() - new Date(due).getTime()
+  if (diff <= 0) return ''
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'less than a min'
+  if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'}`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'}`
+  const days = Math.floor(hrs / 24)
+  const remH = hrs % 24
+  const d = `${days} day${days === 1 ? '' : 's'}`
+  return remH > 0 ? `${d} ${remH} hr${remH === 1 ? '' : 's'}` : d
+}

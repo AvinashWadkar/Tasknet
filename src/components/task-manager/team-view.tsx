@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
 import { api } from './api'
 import type { Me, TeamData, TeamEmployee, TeamTask, TaskStatus } from './types'
-import { fmtDate } from '@/lib/dates'
+import { fmtDate, delayLabel } from '@/lib/dates'
 import {
   Users,
   ListTodo,
@@ -89,6 +89,9 @@ function EmployeeRow({
                     <p className="truncate text-sm font-medium text-slate-800">{t.title}</p>
                     <p className="text-xs text-slate-500">
                       Due {fmtDate(t.dueDate)} · by {t.assignedBy}
+                      {t.overdue && (
+                        <span className="font-semibold text-red-600"> · Delayed by {delayLabel(t.dueDate)}</span>
+                      )}
                     </p>
                   </div>
                   {t.aborted ? (
@@ -174,6 +177,9 @@ function TaskRow({ task, onOpenTask }: { task: FlatTask; onOpenTask: (id: string
         <p className="truncate text-sm font-semibold text-slate-800">{task.title}</p>
         <p className="truncate text-xs text-slate-500">
           Due {fmtDate(task.dueDate)} · assigned by {task.assignedBy}
+          {task.overdue && (
+            <span className="font-semibold text-red-600"> · Delayed by {delayLabel(task.dueDate)}</span>
+          )}
         </p>
         <div className="mt-1.5 flex items-center gap-2">
           <div className="flex -space-x-1.5">

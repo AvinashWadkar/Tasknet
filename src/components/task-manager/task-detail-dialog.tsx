@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast'
 import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar } from './shared'
 import { api } from './api'
 import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
-import { fmtDateTime, fmtDate, fmtTime } from '@/lib/dates'
+import { fmtDateTime, fmtDate, fmtTime, delayLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import {
   Loader2,
@@ -42,6 +42,7 @@ import {
   Plus,
   History,
   Ban,
+  AlarmClock,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -257,6 +258,12 @@ export function TaskDetailDialog({
                       <CalendarClock className="h-4 w-4 text-brand-600" />
                       Due: <b className="font-semibold">{fmtDate(task.dueDate)}, {fmtTime(task.dueDate)} IST</b>
                     </span>
+                    {isOverdue && (
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-red-600">
+                        <AlarmClock className="h-4 w-4" />
+                        Delayed by {delayLabel(task.dueDate)}
+                      </span>
+                    )}
                     <span className="inline-flex items-center gap-1.5">
                       <UserRound className="h-4 w-4 text-brand-600" />
                       Owner: <b className="font-semibold">{task.creator.id === me.id ? 'You' : task.creator.name}</b>

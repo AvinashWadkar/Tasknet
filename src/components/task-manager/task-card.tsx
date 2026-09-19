@@ -1,10 +1,10 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { fmtTime, fmtDate } from '@/lib/dates'
+import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
 import type { Me, TaskDTO } from './types'
-import { CalendarClock, UserRound } from 'lucide-react'
+import { CalendarClock, UserRound, AlarmClock } from 'lucide-react'
 
 export function TaskCard({
   task,
@@ -63,8 +63,16 @@ export function TaskCard({
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
         <span className="inline-flex items-center gap-1">
           <CalendarClock className="h-3.5 w-3.5" />
-          {isToday ? `Today, ${fmtTime(task.dueDate)}` : fmtDate(task.dueDate)}
+          {isToday && !overdue
+            ? `Today, ${fmtTime(task.dueDate)}`
+            : `${fmtDate(task.dueDate)}, ${fmtTime(task.dueDate)}`}
         </span>
+        {overdue && (
+          <span className="inline-flex items-center gap-1 font-semibold text-red-600">
+            <AlarmClock className="h-3.5 w-3.5" />
+            Delayed by {delayLabel(task.dueDate)}
+          </span>
+        )}
         <span className="inline-flex items-center gap-1">
           <UserRound className="h-3.5 w-3.5" />
           {isCreator ? 'Created by you' : `By ${task.creator.name}`}

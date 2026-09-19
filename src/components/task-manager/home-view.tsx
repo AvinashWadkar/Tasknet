@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
+import { AiPriorityPanel } from './ai-priority-panel'
 import { greetingForHour, istHour, istToday, fmtDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
 import { CalendarCheck2, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2 } from 'lucide-react'
@@ -46,14 +47,31 @@ export function HomeView({
   const { todayTasks, upcoming, stats } = useMemo(() => {
     const all = tasks || []
     const mine = all.filter((t) => t.assignments.some((a) => a.userId === me.id) || t.creator.id === me.id)
+    const istDayOf = (iso: string) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(iso))
+    // "My tasks for today" = due today + every past-dated task still open (overdue work must be closed)
     const todays = mine.filter((t) => {
-      const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(t.dueDate))
-      return d === today
+      const d = istDayOf(t.dueDate)
+      if (t.status === 'ABORTED') return d === today // aborted tasks stay listed only on their due day
+      if (d === today) return true
+      if (d < today) {
+        const myA = t.assignments.find((a) => a.userId === me.id)
+        if (myA) return myA.status !== 'COMPLETED'
+        // I only created it — keep chasing until every assignee completes
+        return t.assignments.length > 0 && t.assignments.some((a) => a.status !== 'COMPLETED')
+      }
+      return false
     })
-    // pending ones first (aborted tasks sink to the bottom)
+    // Overdue first (most delayed on top), then today's, aborted tasks sink to the bottom
+    const rankOf = (t: typeof mine[number]) => {
+      if (t.status === 'ABORTED') return 2
+      return istDayOf(t.dueDate) < today ? 0 : 1
+    }
     todays.sort((a, b) => {
-      const ab = (t: typeof a) => (t.status === 'ABORTED' ? 1 : 0)
-      if (ab(a) !== ab(b)) return ab(a) - ab(b)
+      const ra = rankOf(a)
+      const rb = rankOf(b)
+      if (ra !== rb) return ra - rb
+      if (ra === 0) return a.dueDate.localeCompare(b.dueDate) // most delayed first
       const sa = a.assignments.find((x) => x.userId === me.id)?.status ?? 'PENDING'
       const sb = b.assignments.find((x) => x.userId === me.id)?.status ?? 'PENDING'
       const order: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, COMPLETED: 2 }
@@ -75,6 +93,7 @@ export function HomeView({
       dueToday: todays.filter(
         (t) =>
           t.status !== 'ABORTED' &&
+          istDayOf(t.dueDate) === today &&
           (t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING') !== 'COMPLETED'
       ).length,
       inProgress: assignedActive.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'IN_PROGRESS').length,
@@ -135,9 +154,11 @@ export function HomeView({
               {greeting}, {firstName} {emoji}
             </h1>
             <p className="mt-2 max-w-xl text-sm text-brand-50/90">
-              {stats.dueToday > 0
-                ? `You have ${stats.dueToday} task${stats.dueToday > 1 ? 's' : ''} to close today. Let's get them done!`
-                : 'All caught up for today — great going!'}
+              {stats.overdue > 0
+                ? `${stats.overdue} overdue task${stats.overdue > 1 ? 's' : ''} need${stats.overdue > 1 ? '' : 's'} your attention${stats.dueToday > 0 ? `, plus ${stats.dueToday} due today` : ''}. Let's close them!`
+                : stats.dueToday > 0
+                  ? `You have ${stats.dueToday} task${stats.dueToday > 1 ? 's' : ''} to close today. Let's get them done!`
+                  : 'All caught up for today — great going!'}
             </p>
           </div>
           <Button
@@ -167,6 +188,9 @@ export function HomeView({
         ))}
       </section>
 
+      {/* AI priority plan */}
+      <AiPriorityPanel me={me} refreshKey={refreshKey} onOpenTask={onOpenTask} />
+
       {/* Today's tasks */}
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -186,8 +210,8 @@ export function HomeView({
           <Card className="border-dashed border-slate-300 bg-white/60">
             <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
               <span className="text-4xl">🎉</span>
-              <p className="font-medium text-slate-700">No tasks due today</p>
-              <p className="text-sm text-slate-500">Enjoy the clear runway — or create a task for your team.</p>
+              <p className="font-medium text-slate-700">All caught up!</p>
+              <p className="text-sm text-slate-500">No pending or overdue tasks for today — enjoy the clear runway, or create a task for your team.</p>
               <Button variant="outline" size="sm" className="mt-2" onClick={() => onNewTask(today)}>
                 <Plus className="mr-2 h-4 w-4" /> Create Task
               </Button>

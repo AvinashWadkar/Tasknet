@@ -117,3 +117,22 @@ Stage Summary:
 - Site-wide brand colour is now #2E4566: shadcn --primary drives buttons/nav pills/focus rings, and the brand-50..950 scale drives tints, hover borders, chips, gradients and icons.
 - Green (emerald/teal) fully removed; semantic status colours intentionally preserved (amber Pending, violet In Progress, red Overdue/Aborted).
 - Dark mode tokens also rebranded (light-navy primary on dark surfaces).
+
+---
+Task ID: 7
+Agent: Z.ai Code (main)
+Task: "Every assigned task need to be completed. AI should analyze and prioritize task accordingly. Past dated pending (Overdue) task should show on home page as my task for today. Also overdue task should show time as well (Delayed by)."
+
+Work Log:
+- lib/dates.ts: added delayLabel(due, now) — human "delayed by" duration ("2 days 5 hrs" / "7 hrs" / "40 mins"), '' when not past.
+- New endpoint POST /api/tasks/prioritize (backend-only z-ai-web-dev-sdk): collects the user's ACTIVE open tasks (assigned-to-me with my status != COMPLETED, plus creator-only tasks until every assignee completes), builds compact LLM payload with precomputed human due facts ("overdue by X (was due ...)"/"due TODAY at ..."), asks the model for STRICT JSON {"order":[{id, reason}]} ranking under the rule "every assigned task must be completed" (overdue first, then due today, in-progress momentum, upcoming). Robust parsing (fence strip + brace slice), id validation, skipped ids appended in deadline order. 22s Promise.race timeout + heuristic fallback ordering (most-delayed → due-today → in-progress → upcoming) with deterministic reasons; response flagged source 'ai'|'fallback'; 60s per-user in-memory cache, {refresh:true} bypasses. Prompt hardened: reasons must not contradict provided due facts.
+- types.ts: PriorityItem interface. New ai-priority-panel.tsx on Home (after stat cards): ranked #1..#n list with reason lines, red "Delayed by X" chips, "follow up" chip for creator-only tasks, N/M done counts, click-to-open task, Re-analyze button with spinner, skeleton loading, fallback notice, empty state. ESLint react-hooks/set-state-in-effect fixed by moving initial fetch into the effect with alive-guard and event-handler-driven Re-analyze state.
+- home-view.tsx: "My Tasks for Today" now includes past-dated open tasks (my assignment not COMPLETED; creator-only kept until all assignees complete; aborted only on their due day). Sort: overdue first (most delayed on top), then today's by status/time, aborted last. Hero copy now calls out overdue ("2 overdue tasks need your attention, plus N due today"). "Due Today" stat fixed to count only tasks actually due today (no overdue double-count). Empty state copy updated.
+- "Delayed by" everywhere: task-card meta row (overdue shows due date WITH time "18 Sept 2026, 4:00 pm" + red AlarmClock "Delayed by 1 day 9 hrs"), task-detail-dialog due row, team-view EmployeeRow + All-Tasks TaskRow.
+- Verified via curl: EMP005 → source 'ai', 2 creator-follow-up items ranked; EMP001 → overdue IN_PROGRESS task ranked #1 "overdue by 10 hrs, client onboarding critical"; EMP002 → 4-item plan, both overdue tasks ranked 1-2 with fact-accurate reasons, cache + refresh param working.
+- Verified via Agent Browser as Rahul (EMP002, had to set first-login password Rahul@2026): hero overdue callout; AI Priority panel ranked list with delayed chips + reasons; My Tasks for Today shows both overdue tasks (Q3 audit "Delayed by 1 day 9 hrs", MIS report "Delayed by 7 hrs") most-delayed-first with Start/Done quick actions; detail dialog shows Due with time + red Delayed by line; 390px mobile stacks cleanly; zero console/page errors; lint clean; dev.log clean.
+
+Stage Summary:
+- Shipped: AI prioritization ("what to work on first") on Home with graceful deadline-based fallback; overdue open tasks now surface in "My Tasks for Today" (most delayed first) so every assigned task gets closed; overdue tasks display due time + "Delayed by <duration>" on cards, detail dialog, team view and AI panel.
+- New demo credential: EMP002 Rahul Verma password = Rahul@2026 (set via first-login modal during E2E).
+- Note: AI ordering/reasons come from the LLM (source:'ai'); when AI is unavailable the endpoint silently returns the same plan shape in strict deadline order (source:'fallback', banner shown in UI).

@@ -115,3 +115,16 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   IN_PROGRESS: 'In Progress',
   COMPLETED: 'Completed',
 }
+
+export interface PriorityItem {
+  id: string
+  title: string
+  reason: string
+  dueDate: string
+  myStatus: TaskStatus | null
+  overdue: boolean
+  delayed: string
+  role: 'assignee' | 'creator'
+  done: number
+  total: number
+}
