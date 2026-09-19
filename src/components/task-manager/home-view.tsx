@@ -6,9 +6,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
 import { AiPriorityPanel } from './ai-priority-panel'
-import { greetingForHour, istHour, istToday, fmtDate } from '@/lib/dates'
+import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
-import { CalendarCheck2, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2 } from 'lucide-react'
+import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2 } from 'lucide-react'
+import { initialsOf } from './shared'
 import { Button } from '@/components/ui/button'
 
 export function HomeView({
@@ -28,10 +29,18 @@ export function HomeView({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [greeting, setGreeting] = useState('Hello')
   const [today, setToday] = useState(istToday())
+  const [clock, setClock] = useState<string | null>(null)
 
   useEffect(() => {
     setGreeting(greetingForHour(istHour()))
     setToday(istToday())
+  }, [])
+
+  useEffect(() => {
+    const tick = () => setClock(fmtISTClock(new Date()))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
   }, [])
 
   useEffect(() => {
@@ -105,6 +114,18 @@ export function HomeView({
     return { todayTasks: todays, upcoming, stats: stat }
   }, [tasks, me, today])
 
+  // Today's focus progress: how much of today's list (incl. rolled-forward overdue) is closed
+  const focus = useMemo(() => {
+    const total = todayTasks.length
+    const closed = todayTasks.filter((t) => {
+      if (t.status === 'ABORTED') return true
+      const myA = t.assignments.find((a) => a.userId === me.id)
+      if (myA) return myA.status === 'COMPLETED'
+      return t.assignments.length > 0 && t.assignments.every((a) => a.status === 'COMPLETED')
+    }).length
+    return { total, closed, pct: total ? Math.round((closed / total) * 100) : 0 }
+  }, [todayTasks, me.id])
+
   async function quickStatus(task: TaskDTO, status: 'IN_PROGRESS' | 'COMPLETED') {
     setBusyId(task.id)
     try {
@@ -134,58 +155,159 @@ export function HomeView({
   const hour = istHour()
   const emoji = hour < 12 ? '☀️' : hour < 17 ? '🌤️' : '🌆'
 
-  const statCards = [
-    { label: 'Due Today', value: stats.dueToday, icon: CalendarCheck2, cls: 'bg-brand-50 text-brand-700' },
-    { label: 'In Progress', value: stats.inProgress, icon: Clock3, cls: 'bg-violet-50 text-violet-700' },
-    { label: 'Completed', value: stats.completed, icon: CheckCircle2, cls: 'bg-brand-50 text-brand-700' },
-    { label: 'Overdue', value: stats.overdue, icon: AlertTriangle, cls: 'bg-red-50 text-red-700' },
+  const statTiles = [
+    {
+      label: 'Overdue',
+      value: stats.overdue,
+      icon: AlertTriangle,
+      tile:
+        stats.overdue > 0
+          ? 'bg-red-500/15 ring-red-300/25 hover:bg-red-500/20'
+          : 'bg-white/[0.07] ring-white/15 hover:bg-white/[0.12]',
+      iconWrap: stats.overdue > 0 ? 'bg-red-400/20 text-red-200' : 'bg-white/10 text-brand-200',
+      alert: stats.overdue > 0,
+    },
+    {
+      label: 'Due Today',
+      value: stats.dueToday,
+      icon: CalendarCheck2,
+      tile: 'bg-white/[0.07] ring-white/15 hover:bg-white/[0.12]',
+      iconWrap: 'bg-white/10 text-brand-200',
+      alert: false,
+    },
+    {
+      label: 'In Progress',
+      value: stats.inProgress,
+      icon: Clock3,
+      tile: 'bg-violet-400/15 ring-violet-300/25 hover:bg-violet-400/20',
+      iconWrap: 'bg-violet-400/20 text-violet-200',
+      alert: false,
+    },
+    {
+      label: 'Completed',
+      value: stats.completed,
+      icon: CheckCircle2,
+      tile: 'bg-white/[0.07] ring-white/15 hover:bg-white/[0.12]',
+      iconWrap: 'bg-white/10 text-brand-200',
+      alert: false,
+    },
   ]
 
   return (
     <div className="space-y-6">
-      {/* Greeting hero */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 p-6 text-white shadow-lg shadow-brand-200 sm:p-8">
-        <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-20 right-32 h-44 w-44 rounded-full bg-brand-300/20 blur-2xl" />
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-brand-100">{fmtDate(new Date())}</p>
-            <h1 className="mt-1 text-2xl font-bold sm:text-3xl">
-              {greeting}, {firstName} {emoji}
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-brand-50/90">
-              {stats.overdue > 0
-                ? `${stats.overdue} overdue task${stats.overdue > 1 ? 's' : ''} need${stats.overdue > 1 ? '' : 's'} your attention${stats.dueToday > 0 ? `, plus ${stats.dueToday} due today` : ''}. Let's close them!`
-                : stats.dueToday > 0
-                  ? `You have ${stats.dueToday} task${stats.dueToday > 1 ? 's' : ''} to close today. Let's get them done!`
-                  : 'All caught up for today — great going!'}
-            </p>
-          </div>
-          <Button
-            onClick={() => onNewTask()}
-            className="bg-white text-brand-700 hover:bg-brand-50 shadow-md"
-            size="lg"
-          >
-            <Plus className="mr-2 h-4 w-4" /> New Task
-          </Button>
-        </div>
-      </section>
+      {/* Greeting hero — bento glass */}
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-900 via-brand-700 to-brand-600 text-white shadow-xl shadow-brand-900/20 ring-1 ring-brand-900/10">
+        <div
+          className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 animate-glow-slow rounded-full bg-brand-400/25 blur-3xl motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <div className="pointer-events-none absolute -bottom-36 left-1/4 h-72 w-72 rounded-full bg-brand-300/15 blur-3xl" aria-hidden="true" />
+        <div className="pointer-events-none absolute -left-16 top-6 h-40 w-40 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.12]"
+          style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 1px, transparent 1px)', backgroundSize: '22px 22px' }}
+          aria-hidden="true"
+        />
 
-      {/* Stats */}
-      <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" aria-label="Task statistics">
-        {statCards.map((s) => (
-          <Card key={s.label} className="border-slate-200/80 shadow-sm">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${s.cls}`}>
-                <s.icon className="h-5 w-5" />
+        <div className="relative p-5 sm:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-5">
+            <div className="flex min-w-0 items-start gap-4">
+              <div
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-white/25 via-white/10 to-white/5 text-base font-bold text-white ring-1 ring-white/25 backdrop-blur-sm sm:h-16 sm:w-16 sm:text-lg"
+                aria-hidden="true"
+              >
+                {initialsOf(me.name)}
               </div>
               <div className="min-w-0">
-                <p className="text-2xl font-bold leading-none text-slate-900">{s.value}</p>
-                <p className="mt-1 truncate text-xs font-medium text-slate-500">{s.label}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-100 ring-1 ring-white/15 backdrop-blur-sm">
+                    <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+                    {fmtWeekdayDate(new Date())}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-brand-100 ring-1 ring-white/15 backdrop-blur-sm">
+                    <span className="relative flex h-2 w-2" aria-hidden="true">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-300 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-lime-300" />
+                    </span>
+                    <span className="tabular-nums">{clock ?? '--:--:--'}</span>
+                    <span className="text-brand-200/80">IST</span>
+                  </span>
+                </div>
+                <h1 className="mt-3 text-[1.7rem] font-bold leading-tight tracking-tight text-white sm:text-4xl">
+                  {greeting},{' '}
+                  <span className="bg-gradient-to-r from-brand-100 via-white to-brand-300 bg-clip-text font-serif italic text-transparent">
+                    {firstName}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="ml-1.5 inline-block animate-float align-middle text-[0.85em] motion-reduce:animate-none"
+                  >
+                    {emoji}
+                  </span>
+                </h1>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-brand-100/85 sm:text-[15px]">
+                  {stats.overdue > 0
+                    ? `${stats.overdue} overdue task${stats.overdue > 1 ? 's' : ''} need${stats.overdue > 1 ? '' : 's'} your attention${stats.dueToday > 0 ? `, plus ${stats.dueToday} due today` : ''}. Let's close them!`
+                    : stats.dueToday > 0
+                      ? `You have ${stats.dueToday} task${stats.dueToday > 1 ? 's' : ''} to close today. Let's get them done!`
+                      : 'All caught up for today — great going!'}
+                </p>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+            <Button
+              onClick={() => onNewTask()}
+              size="lg"
+              className="group h-11 w-full bg-white text-brand-800 shadow-xl shadow-brand-950/30 transition-all duration-300 hover:-translate-y-0.5 hover:bg-brand-50 hover:shadow-2xl hover:shadow-brand-950/40 sm:w-auto"
+            >
+              <Plus className="mr-2 h-4 w-4 transition-transform duration-300 group-hover:rotate-90" aria-hidden="true" />
+              New Task
+            </Button>
+          </div>
+
+          <div role="group" aria-label="Task statistics" className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {statTiles.map((s) => (
+              <div
+                key={s.label}
+                className={`rounded-2xl p-4 ring-1 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 ${s.tile}`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${s.iconWrap}`}>
+                    <s.icon className="h-4 w-4" aria-hidden="true" />
+                  </div>
+                  {s.alert && (
+                    <span className="relative flex h-2.5 w-2.5" role="img" aria-label="Needs attention">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-300 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-300" />
+                    </span>
+                  )}
+                </div>
+                <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-white">{s.value}</p>
+                <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-brand-100/70">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {focus.total > 0 && (
+            <div className="mt-5 flex items-center gap-3" aria-label="Today's completion progress">
+              <div
+                className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15"
+                role="progressbar"
+                aria-valuenow={focus.pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand-300 to-white transition-all duration-500"
+                  style={{ width: `${focus.pct}%` }}
+                />
+              </div>
+              <p className="shrink-0 text-xs font-semibold text-brand-100">
+                {focus.closed} of {focus.total} closed
+                <span className="ml-1.5 text-brand-200/70">{focus.pct}%</span>
+              </p>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* AI priority plan */}

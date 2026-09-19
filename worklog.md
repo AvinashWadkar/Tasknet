@@ -156,3 +156,20 @@ Stage Summary:
 - Shipped: calendar is now perspective-aware — employees see a task on the day they actually finished it (due 18 + done 20 → shows on the 20th), while creators always see it under the due date they set; grid dots, card badges, legend footnote and agenda copy all follow the same rule, and the API returns late-completed tasks when browsing the month they were completed in.
 - Bonus fixes: creator-facing status badges/dots now show aggregate progress (viewerStatus); pre-existing 390px horizontal overflow on the Home page eliminated (grid-cols-1 + min-w-0).
 - Demo state: "Vendor invoice reconciliation (calendar check)" (creator ADMIN, assignees Rahul done 20 Sept / Neha open-overdue) and "Client escalation follow-up call" (creator Avinash, assignee Suresh done 20 Sept) exist to demo the feature.
+
+---
+Task ID: 9
+Agent: Z.ai Code (main)
+Task: "Can you give more modern look for home page header which is having 'Good Morning Avinash'."
+
+Work Log:
+- lib/dates.ts: added fmtISTClock (live "hh:mm:ss am" IST clock) and fmtWeekdayDate ("Monday, 22 Sep" eyebrow date).
+- globals.css: new @theme animation tokens --animate-float (emoji bob) and --animate-glow-slow (hero glow breathing), with @keyframes; both respect motion-reduce in usage.
+- home-view.tsx hero rewritten as a "bento glass" dashboard header: diagonal deep-navy gradient (brand-900→700→600) + three radial glow blobs (one slowly breathing) + subtle white dot-grid texture + ring-1/shadow-xl; initials avatar tile (glass gradient, rounded-2xl, from initialsOf); glassy uppercase eyebrow chips for date and a LIVE ticking IST clock (1s interval, pulsing lime dot, tabular-nums); greeting now sets the user's first name in serif-italic with a brand gradient (bg-clip-text) and a floating time-of-day emoji; New Task CTA upgraded (lift + deeper shadow on hover, Plus icon rotates 90°).
+- Stats absorbed into the hero: the 4 standalone white stat cards below the hero were replaced by 4 glassmorphic tiles inside the hero (2×2 mobile / 4-col desktop, hover lift): Overdue tile turns red-glass with pulsing alert dot when > 0, In Progress violet-glass, Due Today/Completed neutral glass. Aria: role="group" aria-label="Task statistics", role="progressbar" with valuenow/min/max on the new progress bar.
+- New "Today's focus" progress bar under the tiles: thin glass bar + "X of Y closed · P%" counting today's list (incl. rolled-forward overdue; aborted counted as closed) — reinforces the "every assigned task must be completed" goal.
+- Verified via Agent Browser: desktop 1280px as Avinash (calm state: neutral tiles, "1 of 1 closed 100%", live clock ticking 02:42:56 AM IST) and as Rahul (EMP002) overdue state (red Overdue tile 2 with pulsing dot, hero callout "2 overdue tasks need your attention", "0 of 2 closed 0%"); mobile 390px stacks cleanly (avatar + chips, full-width CTA, 2×2 tiles, progress bar) with scrollWidth exactly 390 (no overflow); AI Priority panel, My Tasks for Today, upcoming section all unaffected; zero console/page errors; lint clean; dev.log clean. Screenshots /tmp/task9-hero-*.png.
+
+Stage Summary:
+- Home header is now a modern bento-glass hero: layered navy gradient + dot grid + glows, glass date/live-clock chips, serif-italic gradient name, glassmorphic stat tiles (red pulsing when overdue), today's-progress bar, and micro-interactions (floating emoji, rotating Plus, tile/button hover lifts).
+- Old standalone stat-cards row removed — all four KPIs now live inside the hero, making the header the dashboard centerpiece; all Task 7 behaviors (overdue roll-forward, delayed-by chips, AI panel) verified intact.

@@ -55,6 +55,27 @@ export function fmtDateTime(d: string | Date): string {
   return `${fmtDate(d)}, ${fmtTime(d)}`
 }
 
+/** Live IST clock string, e.g. "09:41:23 am" */
+export function fmtISTClock(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: IST_TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  }).format(d)
+}
+
+/** "Monday, 22 Sep" style eyebrow date in IST */
+export function fmtWeekdayDate(d: string | Date): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: IST_TZ,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(d))
+}
+
 export function istHour(d: Date = new Date()): number {
   return Number(
     new Intl.DateTimeFormat('en-IN', { timeZone: IST_TZ, hour: 'numeric', hour12: false }).format(d)
