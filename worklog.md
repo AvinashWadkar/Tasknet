@@ -40,3 +40,22 @@ Stage Summary:
 - Password lifecycle keeps the plaintext mirror in sync everywhere: create → user change → admin reset, plus bcrypt-verified backfill + lazy login backfill for legacy rows.
 - Security posture: bcrypt hash remains the credential store; plaintext mirror is exposed ONLY to ADMIN role clients; employees never receive password fields.
 - Current demo state: EMP006 (Neha Gupta) password = NehaSafe@2026 (set via the mandatory modal during E2E); all other users unchanged from Task 1 (ADMIN/Admin@123, EMP001/Avinash@2026, EMP005/Suresh@2026, rest Digitide@123).
+
+---
+Task ID: 3
+Agent: Z.ai Code (main)
+Task: Confirm & strengthen manager Team View — "When manager checks team view I can see my downline employee-wise task status."
+
+Work Log:
+- Reviewed /api/team route, lib/hierarchy.ts (getDescendantIds, canViewTask), team-view.tsx, and isManager flag in /api/auth/me — all core mechanics were already in place (downline-only tree, per-employee stats, read-only manager task access).
+- Fixed dead feature: hierarchy tree nodes had an unused onOpenEmployee prop — wired it in team-view.tsx (openEmployeeFromTree): clicking "View" on a tree node now expands + smooth-scrolls to that employee's row in the Employee-wise Task Status panel; added id/scroll-mt anchors on EmployeeRow.
+- Cleanup: removed unused scopeIds variable and leftover `isAdmin ? visibleIds : visibleIds` ternary in /api/team; documented that the viewer's own tasks are intentionally excluded from team view (they live on Home/My Tasks).
+- Verified via Agent Browser as Suresh (EMP005, DM): Team View tab visible; tree shows Suresh(YOU) → Amit(AM) → Kavita + Priya(TL) → Avinash/Rahul/Neha with report counts; 6 stat cards; employee-wise rows with chips (e.g. Avinash 4 total / 1 pending / 2 active / 1 overdue / 1 done); expanded rows list each task with due date, assigner, status badges; opened downline task detail — read-only with ASSIGNED TO(3) per-person statuses, COMPLETE HISTORY with timestamps, "0 of 3 employees completed"; tree View button expands the matching row.
+- Verified downline protection via browser + curl: Executive Neha has no Team View tab; her GET /api/team → 403; opening an upline task (Suresh→Amit) → 403 "You do not have access to this task"; Suresh opening the same task → 200.
+- Verified admin org scope after cleanup: /api/team returns ORG root → Suresh, 7 employees, 10 tasks, correct totals. Lint clean, dev.log clean, mobile/desktop layout verified earlier.
+
+Stage Summary:
+- Manager Team View confirmed working end-to-end: downline-only hierarchy tree + employee-wise task status (stats chips + per-task drill-down with full read-only history).
+- New: hierarchy tree is now interactive — View jumps to the employee's task status row.
+- Visibility rule proven at API level: upline sees downline (200), downline blocked from team data and upline tasks (403).
+- Note: Priya (EMP003) no longer has the default password (changed during earlier testing; unknown to log). Admin can reveal or reset it via Admin → User Management (Task 2 feature).

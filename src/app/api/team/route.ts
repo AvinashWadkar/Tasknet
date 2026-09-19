@@ -91,11 +91,10 @@ export async function GET() {
     tree = build(session.id)
   }
 
-  const scopeIds = isAdmin ? visibleIds : [session.id, ...visibleIds]
-
-  // All assignments of the visible employees, with their tasks
+  // All assignments of the visible employees (manager's downline / admin's whole org),
+  // with their tasks. The viewer's own tasks are not part of the team view.
   const assignments = await db.taskAssignment.findMany({
-    where: { userId: { in: isAdmin ? visibleIds : visibleIds } },
+    where: { userId: { in: visibleIds } },
     include: {
       task: {
         include: { creator: { select: { id: true, name: true, employeeCode: true } } },

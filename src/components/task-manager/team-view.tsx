@@ -99,7 +99,7 @@ function EmployeeRow({
   onOpenTask: (id: string) => void
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div id={`emp-row-${emp.id}`} className="scroll-mt-4 rounded-xl border border-slate-200 bg-white">
       <button
         onClick={onToggle}
         className="flex w-full items-center gap-3 p-3.5 text-left transition hover:bg-slate-50/60"
@@ -179,6 +179,16 @@ export function TeamView({
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
+
+  /** From the hierarchy tree: expand + scroll to that employee's status row. */
+  function openEmployeeFromTree(id: string) {
+    setExpanded((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`emp-row-${id}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
 
   useEffect(() => {
     let alive = true
@@ -262,7 +272,7 @@ export function TeamView({
               <CardContent className="p-4">
                 <h3 className="mb-3 font-semibold text-slate-900">Reporting Hierarchy</h3>
                 <div className="max-h-[32rem] overflow-y-auto pr-1 [scrollbar-width:thin]">
-                  <TreeNodeView node={data.tree} isMe={data.scope === 'team'} depth={0} />
+                  <TreeNodeView node={data.tree} isMe={data.scope === 'team'} depth={0} onOpenEmployee={openEmployeeFromTree} />
                 </div>
               </CardContent>
             </Card>
