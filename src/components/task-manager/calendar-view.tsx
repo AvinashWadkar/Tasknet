@@ -24,6 +24,7 @@ const DOT: Record<string, string> = {
   PENDING: 'bg-amber-400',
   IN_PROGRESS: 'bg-violet-500',
   COMPLETED: 'bg-emerald-500',
+  ABORTED: 'bg-red-400',
 }
 
 export function CalendarView({
@@ -164,7 +165,10 @@ export function CalendarView({
                     </span>
                     <div className="mt-0.5 flex h-1.5 items-center gap-0.5">
                       {dayTasks.slice(0, 3).map((t) => {
-                        const st = t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING'
+                        const st =
+                          t.status === 'ABORTED'
+                            ? 'ABORTED'
+                            : t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING'
                         return <span key={t.id} className={cn('h-1.5 w-1.5 rounded-full', isSel ? 'bg-white/90' : DOT[st])} />
                       })}
                       {dayTasks.length > 3 && (
@@ -182,6 +186,7 @@ export function CalendarView({
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" /> Pending</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-500" /> In Progress</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Completed</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" /> Aborted</span>
             </div>
           </CardContent>
         </Card>

@@ -23,6 +23,12 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const task = await db.task.findUnique({ where: { id }, include: { assignments: true } })
     if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+    if (task.status === 'ABORTED') {
+      return NextResponse.json(
+        { error: 'This task was aborted by the creator — status updates are closed' },
+        { status: 400 }
+      )
+    }
 
     const assignment = task.assignments.find((a) => a.userId === session.id)
     if (!assignment) {

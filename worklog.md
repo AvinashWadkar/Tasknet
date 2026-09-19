@@ -75,3 +75,27 @@ Work Log:
 Stage Summary:
 - Team View is now task-first: employee-wise status (left) + keyword-searchable all-tasks list (right), click any task for full status/history. Hierarchy tree removed from UI (API tree payload still computed, harmless).
 - Aggregated per-task status gives managers an instant portfolio view of downline work.
+
+---
+Task ID: 5
+Agent: Z.ai Code (main)
+Task: New requirement — task creator should be able to abort (cancel) their own task.
+
+Work Log:
+- Schema: Task gained `status` ("ACTIVE" | "ABORTED", default ACTIVE), `abortedAt`, `abortReason`; ran db:push and restarted dev server (stale Prisma Client).
+- New endpoint POST /api/tasks/[id]/abort: creator-only (403 for anyone else), optional reason (≤500 chars) recorded in history; sets status/abortedAt/abortReason and writes a TASK_ABORTED activity ("Aborted the task — \"reason\""); returns full refreshed task detail (assignments + activities). Double-abort → 400 "already been aborted".
+- Locks after abort: /api/tasks/[id]/status rejects assignee updates (400 "status updates are closed"); PATCH /api/tasks/[id] rejects creator edits/add-assignee (400 "can no longer be edited"). Comments stay open for wrap-up.
+- shared.tsx: new AbortedBadge (solid red with Ban icon); task-detail-dialog adds TASK_ABORTED to the history icon map.
+- task-detail-dialog.tsx: creator sees a red-outline "Abort Task" button in the footer (active tasks only) → AlertDialog confirm with optional reason Textarea (busy-safe e.preventDefault, success toast). Aborted state renders: red banner "This task was aborted by {creator} on {ts}" + reason, AbortedBadge replaces status/overdue badges in header, "STATUS UPDATES CLOSED" box replaces the assignee status buttons, add-assignee select hidden, comment box still available.
+- task-card.tsx: aborted cards show AbortedBadge (no status/overdue badges), muted title, no quick Start/Done buttons, subdued hover.
+- home-view.tsx: aborted tasks excluded from all stat buckets (Due Today / In Progress / Completed / Overdue) and from "Coming up next 7 days"; still listed under Today with badge, sorted last.
+- calendar-view.tsx: aborted tasks render a red dot regardless of per-person status; legend gained "Aborted".
+- /api/team: EmpTask carries `aborted`; aborted assignments count only into total + new `aborted` bucket (excluded from pending/inProgress/completed/overdue, never overdue); totals gained aborted.
+- team-view.tsx: 7th stat card "Aborted"; per-employee chip "N aborted"; employee rows + All-Tasks rows show AbortedBadge for aborted tasks (no overdue/status badges); keyword search also matches "abort(ed)".
+- Verified via curl: non-creator abort → 403; creator abort with reason → 200 + TASK_ABORTED history; double abort → 400; assignee status update after abort → 400; creator PATCH after abort → 400; /api/team totals {total:12, pending:7, inProgress:2, completed:1, overdue:3, aborted:2} with aborted tasks excluded from overdue/pending.
+- Verified via Agent Browser (desktop + 390px mobile): created task via New Task dialog as Avinash → Abort Task button → confirm dialog with reason → toast + red banner + AbortedBadge + history entry + button disappears; assignee Suresh sees banner, "Status updates closed" box, no status buttons, no Abort button; home cards/badges, calendar red dot + legend, team view aborted stat card + Rahul "1 aborted" chip + badge rows + search "abort" filters All Tasks to the aborted task. No console errors; lint clean.
+
+Stage Summary:
+- Feature shipped: only the task creator can abort a task (from the task detail dialog footer), with optional reason captured in the shared history. Aborting locks the task: no status updates by assignees, no edits/new assignees; comments remain open.
+- Aborted tasks stay visible everywhere (home today list, calendar with red dot, team view) but are excluded from all active stats and overdue flags, and can never be re-opened into active counts.
+- Demo state: 2 aborted test tasks exist — "Q3 vendor reconciliation" (creator Avinash → Suresh, due 19 Sep) and "Downline abort check" (creator Avinash → Rahul, due 19 Sep); "Browser abort test" (creator Avinash → Suresh, due 20 Sep 18:00 IST) aborted with reason "Requirement changed during sprint review".

@@ -111,6 +111,7 @@ export async function GET() {
     status: string
     assignedBy: string
     overdue: boolean
+    aborted: boolean
   }
   type EmpStat = {
     id: string
@@ -119,7 +120,7 @@ export async function GET() {
     designation: string
     process: string
     email: string
-    stats: { total: number; pending: number; inProgress: number; completed: number; overdue: number }
+    stats: { total: number; pending: number; inProgress: number; completed: number; overdue: number; aborted: number }
     tasks: EmpTask[]
   }
 
@@ -134,7 +135,7 @@ export async function GET() {
       designation: u.designation,
       process: u.process,
       email: u.email,
-      stats: { total: 0, pending: 0, inProgress: 0, completed: 0, overdue: 0 },
+      stats: { total: 0, pending: 0, inProgress: 0, completed: 0, overdue: 0, aborted: 0 },
       tasks: [],
     })
   }
@@ -142,12 +143,18 @@ export async function GET() {
   for (const a of assignments) {
     const emp = empMap.get(a.userId)
     if (!emp) continue
-    const overdue = a.status !== 'COMPLETED' && a.task.dueDate < now
+    // Aborted tasks only count towards total/aborted — they are excluded from
+    // working stats (pending / in progress / completed / overdue).
+    const aborted = a.task.status === 'ABORTED'
+    const overdue = !aborted && a.status !== 'COMPLETED' && a.task.dueDate < now
     emp.stats.total++
-    if (a.status === 'PENDING') emp.stats.pending++
-    if (a.status === 'IN_PROGRESS') emp.stats.inProgress++
-    if (a.status === 'COMPLETED') emp.stats.completed++
-    if (overdue) emp.stats.overdue++
+    if (aborted) emp.stats.aborted++
+    if (!aborted) {
+      if (a.status === 'PENDING') emp.stats.pending++
+      if (a.status === 'IN_PROGRESS') emp.stats.inProgress++
+      if (a.status === 'COMPLETED') emp.stats.completed++
+      if (overdue) emp.stats.overdue++
+    }
     emp.tasks.push({
       id: a.task.id,
       title: a.task.title,
@@ -156,6 +163,7 @@ export async function GET() {
       status: a.status,
       assignedBy: a.task.creator.name,
       overdue,
+      aborted,
     })
   }
 
@@ -173,9 +181,10 @@ export async function GET() {
       acc.inProgress += e.stats.inProgress
       acc.completed += e.stats.completed
       acc.overdue += e.stats.overdue
+      acc.aborted += e.stats.aborted
       return acc
     },
-    { employees: 0, total: 0, pending: 0, inProgress: 0, completed: 0, overdue: 0 }
+    { employees: 0, total: 0, pending: 0, inProgress: 0, completed: 0, overdue: 0, aborted: 0 }
   )
 
   return NextResponse.json({ tree, employees, totals, scope: isAdmin ? 'org' : 'team' })

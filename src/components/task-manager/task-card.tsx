@@ -2,7 +2,7 @@
 
 import { cn } from '@/lib/utils'
 import { fmtTime, fmtDate } from '@/lib/dates'
-import { InitialAvatar, StatusBadge, OverdueBadge } from './shared'
+import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
 import type { Me, TaskDTO } from './types'
 import { CalendarClock, UserRound } from 'lucide-react'
 
@@ -20,17 +20,19 @@ export function TaskCard({
   busy?: boolean
 }) {
   const mine = task.assignments.find((a) => a.userId === me.id)
-  const overdue = mine && mine.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
+  const aborted = task.status === 'ABORTED'
+  const overdue = !aborted && mine && mine.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
   const isToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date()) ===
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(task.dueDate))
   const isCreator = task.creator.id === me.id
-  const canQuick = onQuickStatus && mine && mine.status !== 'COMPLETED'
+  const canQuick = onQuickStatus && mine && mine.status !== 'COMPLETED' && !aborted
 
   return (
     <div
       className={cn(
         'group cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md',
         overdue ? 'border-red-200' : 'border-slate-200',
+        aborted && 'bg-slate-50/80 hover:border-slate-200 hover:shadow-sm',
         busy && 'pointer-events-none opacity-60'
       )}
       onClick={onOpen}
@@ -41,12 +43,20 @@ export function TaskCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate font-semibold text-slate-900 group-hover:text-emerald-700">{task.title}</h3>
+          <h3 className={cn('truncate font-semibold', aborted ? 'text-slate-500' : 'text-slate-900 group-hover:text-emerald-700')}>
+            {task.title}
+          </h3>
           {task.description && <p className="mt-0.5 line-clamp-1 text-sm text-slate-500">{task.description}</p>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          {mine ? <StatusBadge status={mine.status} /> : <StatusBadge status="PENDING" />}
-          {overdue && <OverdueBadge />}
+          {aborted ? (
+            <AbortedBadge />
+          ) : (
+            <>
+              {mine ? <StatusBadge status={mine.status} /> : <StatusBadge status="PENDING" />}
+              {overdue && <OverdueBadge />}
+            </>
+          )}
         </div>
       </div>
 

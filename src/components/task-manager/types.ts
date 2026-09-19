@@ -1,4 +1,5 @@
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+export type TaskState = 'ACTIVE' | 'ABORTED'
 
 export interface Me {
   id: string
@@ -36,6 +37,9 @@ export interface TaskDTO {
   title: string
   description: string | null
   dueDate: string
+  status: TaskState
+  abortedAt: string | null
+  abortReason: string | null
   createdAt: string
   creator: { id: string; name: string; employeeCode: string; designation: string }
   assignments: TaskAssignmentDTO[]
@@ -76,6 +80,7 @@ export interface TeamTask {
   status: TaskStatus
   assignedBy: string
   overdue: boolean
+  aborted: boolean
 }
 
 export interface TeamEmployee {
@@ -85,7 +90,7 @@ export interface TeamEmployee {
   designation: string
   process: string
   email: string
-  stats: { total: number; pending: number; inProgress: number; completed: number; overdue: number }
+  stats: { total: number; pending: number; inProgress: number; completed: number; overdue: number; aborted: number }
   tasks: TeamTask[]
 }
 
@@ -101,7 +106,7 @@ export interface TreeNode {
 export interface TeamData {
   tree: TreeNode
   employees: TeamEmployee[]
-  totals: { employees: number; total: number; pending: number; inProgress: number; completed: number; overdue: number }
+  totals: { employees: number; total: number; pending: number; inProgress: number; completed: number; overdue: number; aborted: number }
   scope: 'org' | 'team'
 }
 

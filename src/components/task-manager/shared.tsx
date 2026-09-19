@@ -1,6 +1,7 @@
 'use client'
 
 import { Badge } from '@/components/ui/badge'
+import { Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { STATUS_LABEL, type TaskStatus } from './types'
 
@@ -21,6 +22,15 @@ export function OverdueBadge({ className }: { className?: string }) {
   return (
     <Badge variant="outline" className="bg-red-100 text-red-700 border-red-200 font-medium">
       Overdue
+    </Badge>
+  )
+}
+
+export function AbortedBadge({ className }: { className?: string }) {
+  return (
+    <Badge variant="outline" className="gap-1 border-red-300 bg-red-600 font-medium text-white">
+      <Ban className="h-3 w-3" aria-hidden="true" />
+      Aborted
     </Badge>
   )
 }

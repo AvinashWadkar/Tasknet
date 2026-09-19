@@ -11,7 +11,19 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { StatusBadge, OverdueBadge, InitialAvatar } from './shared'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
+import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar } from './shared'
 import { api } from './api'
 import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
 import { fmtDateTime, fmtDate, fmtTime } from '@/lib/dates'
@@ -29,6 +41,7 @@ import {
   Flag,
   Plus,
   History,
+  Ban,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -38,6 +51,7 @@ const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
   REOPENED: { icon: Rewind, cls: 'bg-amber-100 text-amber-700' },
   COMMENT: { icon: StickyNote, cls: 'bg-slate-100 text-slate-600' },
   TASK_UPDATED: { icon: History, cls: 'bg-sky-100 text-sky-700' },
+  TASK_ABORTED: { icon: Ban, cls: 'bg-red-100 text-red-700' },
 }
 
 export function TaskDetailDialog({
@@ -60,6 +74,10 @@ export function TaskDetailDialog({
   const [addUsers, setAddUsers] = useState<{ id: string; name: string }[]>([])
   const [addSel, setAddSel] = useState<string | null>(null)
   const [addingBusy, setAddingBusy] = useState(false)
+  const [abortOpen, setAbortOpen] = useState(false)
+  const [abortReason, setAbortReason] = useState('')
+  const [abortBusy, setAbortBusy] = useState(false)
+  const { toast } = useToast()
 
   const load = useCallback(async () => {
     if (!taskId) return
@@ -142,9 +160,31 @@ export function TaskDetailDialog({
     }
   }
 
+  async function abortTask() {
+    if (!task) return
+    setAbortBusy(true)
+    try {
+      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}/abort`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: abortReason.trim() || undefined }),
+      })
+      setTask(res.task)
+      setAbortOpen(false)
+      setAbortReason('')
+      onChanged()
+      toast({ title: 'Task aborted', description: 'Assignees can no longer update their status.' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not abort task')
+    } finally {
+      setAbortBusy(false)
+    }
+  }
+
   const myAssignment = task?.assignments.find((a) => a.userId === me.id)
   const isOverdue =
     task && myAssignment && myAssignment.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
+  const isCreator = task?.creator.id === me.id
+  const isAborted = task?.status === 'ABORTED'
 
   return (
     <Dialog open={Boolean(taskId)} onOpenChange={(o) => !o && onClose()}>
@@ -177,13 +217,31 @@ export function TaskDetailDialog({
                   </DialogDescription>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {isOverdue && <OverdueBadge />}
-                  {myAssignment && <StatusBadge status={myAssignment.status} />}
+                  {isAborted ? (
+                    <AbortedBadge />
+                  ) : (
+                    <>
+                      {isOverdue && <OverdueBadge />}
+                      {myAssignment && <StatusBadge status={myAssignment.status} />}
+                    </>
+                  )}
                 </div>
               </div>
             </DialogHeader>
 
             <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 [scrollbar-width:thin]">
+              {isAborted && task.abortedAt && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3" role="status">
+                  <Ban className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
+                  <div className="min-w-0 text-sm">
+                    <p className="font-semibold text-red-800">
+                      This task was aborted by {isCreator ? 'you' : task.creator.name} on{' '}
+                      {fmtDateTime(task.abortedAt)}
+                    </p>
+                    {task.abortReason && <p className="mt-0.5 break-words text-red-700">Reason: {task.abortReason}</p>}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-5 md:grid-cols-2">
                 {/* Left column: details */}
                 <div className="space-y-4">
@@ -206,7 +264,7 @@ export function TaskDetailDialog({
                   </div>
 
                   {/* My status actions */}
-                  {canAct && myAssignment && (
+                  {canAct && myAssignment && !isAborted && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Update my status</p>
                       <div className="flex flex-wrap gap-2">
@@ -231,6 +289,14 @@ export function TaskDetailDialog({
                         ))}
                         {statusBusy && <Loader2 className="h-4 w-4 animate-spin self-center text-emerald-600" />}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Status closed because the task was aborted */}
+                  {canAct && myAssignment && isAborted && (
+                    <div className="rounded-xl border border-red-200 bg-red-50/60 p-3">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">Status updates closed</p>
+                      <p className="text-sm text-red-600/90">This task was aborted by the creator, so statuses are closed.</p>
                     </div>
                   )}
 
@@ -259,7 +325,7 @@ export function TaskDetailDialog({
                       ))}
                     </div>
 
-                    {canAct && task.creator.id === me.id && addUsers.length > 0 && (
+                    {canAct && isCreator && !isAborted && addUsers.length > 0 && (
                       <div className="mt-2 flex items-center gap-2">
                         <select
                           value={addSel || ''}
@@ -347,13 +413,70 @@ export function TaskDetailDialog({
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 {task.assignments.filter((a) => a.status === 'COMPLETED').length} of {task.assignments.length} employees completed
               </span>
-              <Button variant="outline" size="sm" onClick={onClose}>
-                Close
-              </Button>
+              <div className="flex items-center gap-2">
+                {isCreator && !isAborted && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => setAbortOpen(true)}
+                  >
+                    <Ban className="mr-1.5 h-3.5 w-3.5" />
+                    Abort Task
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={onClose}>
+                  Close
+                </Button>
+              </div>
             </div>
           </>
         )}
       </DialogContent>
+
+      {/* Abort confirmation (creator only) */}
+      {task && (
+        <AlertDialog open={abortOpen} onOpenChange={setAbortOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Abort this task?</AlertDialogTitle>
+              <AlertDialogDescription>
+                &ldquo;{task.title}&rdquo; will be marked as aborted. Assignees will no longer be able to
+                update their status, and the task is excluded from active counts. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <Label htmlFor="abort-reason">Reason (optional)</Label>
+              <Textarea
+                id="abort-reason"
+                placeholder="e.g. Requirement changed / created by mistake"
+                value={abortReason}
+                onChange={(e) => setAbortReason(e.target.value)}
+                rows={3}
+                maxLength={500}
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={abortBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 text-white hover:bg-red-700"
+                disabled={abortBusy}
+                onClick={(e) => {
+                  e.preventDefault()
+                  abortTask()
+                }}
+              >
+                {abortBusy ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Ban className="mr-1.5 h-4 w-4" />
+                )}
+                {abortBusy ? 'Aborting…' : 'Abort Task'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </Dialog>
   )
 }

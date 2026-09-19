@@ -66,6 +66,12 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (task.createdById !== session.id) {
     return NextResponse.json({ error: 'Only the task creator can edit this task' }, { status: 403 })
   }
+  if (task.status === 'ABORTED') {
+    return NextResponse.json(
+      { error: 'This task has been aborted and can no longer be edited' },
+      { status: 400 }
+    )
+  }
 
   try {
     const body = await req.json()

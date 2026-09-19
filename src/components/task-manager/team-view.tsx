@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { InitialAvatar, StatusBadge, OverdueBadge } from './shared'
+import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
 import { api } from './api'
 import type { Me, TeamData, TeamEmployee, TeamTask, TaskStatus } from './types'
 import { fmtDate } from '@/lib/dates'
@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Search,
   Network,
+  Ban,
 } from 'lucide-react'
 
 function EmployeeRow({
@@ -62,6 +63,9 @@ function EmployeeRow({
           {emp.stats.completed > 0 && (
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">{emp.stats.completed} done</span>
           )}
+          {emp.stats.aborted > 0 && (
+            <span className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">{emp.stats.aborted} aborted</span>
+          )}
         </div>
         <div className="text-right sm:hidden">
           <p className="text-sm font-bold text-slate-700">{emp.stats.total}</p>
@@ -87,8 +91,14 @@ function EmployeeRow({
                       Due {fmtDate(t.dueDate)} · by {t.assignedBy}
                     </p>
                   </div>
-                  {t.overdue && <OverdueBadge />}
-                  <StatusBadge status={t.status} />
+                  {t.aborted ? (
+                    <AbortedBadge />
+                  ) : (
+                    <>
+                      {t.overdue && <OverdueBadge />}
+                      <StatusBadge status={t.status} />
+                    </>
+                  )}
                 </button>
               ))}
             </div>
@@ -110,6 +120,7 @@ interface FlatTask {
   completedCount: number
   status: TaskStatus
   overdue: boolean
+  aborted: boolean
 }
 
 function flattenTasks(employees: TeamEmployee[]): FlatTask[] {
@@ -128,6 +139,7 @@ function flattenTasks(employees: TeamEmployee[]): FlatTask[] {
           completedCount: 0,
           status: 'PENDING',
           overdue: false,
+          aborted: t.aborted,
         }
         map.set(t.id, ft)
       }
@@ -141,8 +153,8 @@ function flattenTasks(employees: TeamEmployee[]): FlatTask[] {
     if (ft.completedCount === ft.assignees.length) ft.status = 'COMPLETED'
     else if (ft.completedCount > 0 || ft.assignees.some((a) => a.status === 'IN_PROGRESS')) ft.status = 'IN_PROGRESS'
     else ft.status = 'PENDING'
-    // Aggregate overdue: due in the past and not everyone finished
-    ft.overdue = new Date(ft.dueDate) < new Date() && ft.completedCount < ft.assignees.length
+    // Aggregate overdue: due in the past and not everyone finished (aborted tasks are never overdue)
+    ft.overdue = !ft.aborted && new Date(ft.dueDate) < new Date() && ft.completedCount < ft.assignees.length
   }
   // Earliest due first (overdue naturally floats to the top)
   out.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
@@ -179,8 +191,14 @@ function TaskRow({ task, onOpenTask }: { task: FlatTask; onOpenTask: (id: string
           </span>
         </div>
       </div>
-      {task.overdue && <OverdueBadge />}
-      <StatusBadge status={task.status} className="shrink-0" />
+      {task.aborted ? (
+        <AbortedBadge className="shrink-0" />
+      ) : (
+        <>
+          {task.overdue && <OverdueBadge />}
+          <StatusBadge status={task.status} className="shrink-0" />
+        </>
+      )}
     </button>
   )
 }
@@ -235,6 +253,7 @@ export function TeamView({
         t.title.toLowerCase().includes(q) ||
         (t.description || '').toLowerCase().includes(q) ||
         t.assignedBy.toLowerCase().includes(q) ||
+        (t.aborted && q.length >= 3 && 'aborted'.includes(q)) ||
         t.assignees.some((a) => a.name.toLowerCase().includes(q))
     )
   }, [allTasks, taskSearch])
@@ -248,6 +267,7 @@ export function TeamView({
         { label: 'In Progress', value: totals.inProgress, icon: Clock3, cls: 'bg-violet-50 text-violet-700' },
         { label: 'Completed', value: totals.completed, icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-700' },
         { label: 'Overdue', value: totals.overdue, icon: AlertTriangle, cls: 'bg-red-50 text-red-700' },
+        { label: 'Aborted', value: totals.aborted, icon: Ban, cls: 'bg-red-100 text-red-700' },
       ]
     : []
 
@@ -270,8 +290,8 @@ export function TeamView({
       )}
 
       {!data && !error && (
-        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
+          {[1, 2, 3, 4, 5, 6, 7].map((i) => (
             <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
@@ -279,7 +299,7 @@ export function TeamView({
 
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
             {statCards.map((s) => (
               <Card key={s.label} className="border-slate-200/80 shadow-sm">
                 <CardContent className="p-3.5">

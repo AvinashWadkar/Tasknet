@@ -50,8 +50,10 @@ export function HomeView({
       const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(t.dueDate))
       return d === today
     })
-    // pending ones first
+    // pending ones first (aborted tasks sink to the bottom)
     todays.sort((a, b) => {
+      const ab = (t: typeof a) => (t.status === 'ABORTED' ? 1 : 0)
+      if (ab(a) !== ab(b)) return ab(a) - ab(b)
       const sa = a.assignments.find((x) => x.userId === me.id)?.status ?? 'PENDING'
       const sb = b.assignments.find((x) => x.userId === me.id)?.status ?? 'PENDING'
       const order: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, COMPLETED: 2 }
@@ -63,17 +65,21 @@ export function HomeView({
     const upcoming = mine
       .filter((t) => {
         const due = new Date(t.dueDate)
-        return due > now && due <= in7 && !todays.includes(t)
+        return t.status !== 'ABORTED' && due > now && due <= in7 && !todays.includes(t)
       })
       .slice(0, 5)
     const assigned = mine.filter((t) => t.assignments.some((a) => a.userId === me.id))
+    // Aborted tasks are cancelled work — excluded from all active stats
+    const assignedActive = assigned.filter((t) => t.status !== 'ABORTED')
     const stat = {
       dueToday: todays.filter(
-        (t) => (t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING') !== 'COMPLETED'
+        (t) =>
+          t.status !== 'ABORTED' &&
+          (t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING') !== 'COMPLETED'
       ).length,
-      inProgress: assigned.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'IN_PROGRESS').length,
-      completed: assigned.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'COMPLETED').length,
-      overdue: assigned.filter(
+      inProgress: assignedActive.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'IN_PROGRESS').length,
+      completed: assignedActive.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'COMPLETED').length,
+      overdue: assignedActive.filter(
         (t) => t.assignments.find((a) => a.userId === me.id)?.status !== 'COMPLETED' && new Date(t.dueDate) < now
       ).length,
     }

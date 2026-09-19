@@ -44,6 +44,9 @@ model Task {
   title       String
   description String?
   dueDate     DateTime
+  status      String   @default("ACTIVE") // ACTIVE | ABORTED (aborted by the creator)
+  abortedAt   DateTime?
+  abortReason String?
   createdById String
   creator     User     @relation("TaskCreator", fields: [createdById], references: [id])
   assignments TaskAssignment[]
