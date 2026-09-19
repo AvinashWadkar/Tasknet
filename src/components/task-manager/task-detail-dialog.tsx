@@ -45,8 +45,8 @@ import {
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
-  TASK_CREATED: { icon: Flag, cls: 'bg-emerald-100 text-emerald-700' },
-  ASSIGNED: { icon: Users, cls: 'bg-teal-100 text-teal-700' },
+  TASK_CREATED: { icon: Flag, cls: 'bg-brand-100 text-brand-700' },
+  ASSIGNED: { icon: Users, cls: 'bg-brand-100 text-brand-700' },
   STATUS_UPDATED: { icon: PlayCircle, cls: 'bg-violet-100 text-violet-700' },
   REOPENED: { icon: Rewind, cls: 'bg-amber-100 text-amber-700' },
   COMMENT: { icon: StickyNote, cls: 'bg-slate-100 text-slate-600' },
@@ -193,7 +193,7 @@ export function TaskDetailDialog({
           <div className="flex items-center justify-center py-16">
             <DialogTitle className="sr-only">Task details</DialogTitle>
             <DialogDescription className="sr-only">Loading task details</DialogDescription>
-            <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+            <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
           </div>
         )}
         {error && (
@@ -254,19 +254,19 @@ export function TaskDetailDialog({
 
                   <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
                     <span className="inline-flex items-center gap-1.5">
-                      <CalendarClock className="h-4 w-4 text-emerald-600" />
+                      <CalendarClock className="h-4 w-4 text-brand-600" />
                       Due: <b className="font-semibold">{fmtDate(task.dueDate)}, {fmtTime(task.dueDate)} IST</b>
                     </span>
                     <span className="inline-flex items-center gap-1.5">
-                      <UserRound className="h-4 w-4 text-emerald-600" />
+                      <UserRound className="h-4 w-4 text-brand-600" />
                       Owner: <b className="font-semibold">{task.creator.id === me.id ? 'You' : task.creator.name}</b>
                     </span>
                   </div>
 
                   {/* My status actions */}
                   {canAct && myAssignment && !isAborted && (
-                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">Update my status</p>
+                    <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700">Update my status</p>
                       <div className="flex flex-wrap gap-2">
                         {(['PENDING', 'IN_PROGRESS', 'COMPLETED'] as TaskStatus[]).map((s) => (
                           <button
@@ -277,17 +277,17 @@ export function TaskDetailDialog({
                               'rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-100',
                               myAssignment.status === s
                                 ? s === 'COMPLETED'
-                                  ? 'bg-emerald-600 text-white shadow'
+                                  ? 'bg-brand-600 text-white shadow'
                                   : s === 'IN_PROGRESS'
                                     ? 'bg-violet-600 text-white shadow'
                                     : 'bg-amber-500 text-white shadow'
-                                : 'border border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:text-emerald-700'
+                                : 'border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700'
                             )}
                           >
                             {statusBusy && myAssignment.status !== s ? '…' : STATUS_LABEL[s]}
                           </button>
                         ))}
-                        {statusBusy && <Loader2 className="h-4 w-4 animate-spin self-center text-emerald-600" />}
+                        {statusBusy && <Loader2 className="h-4 w-4 animate-spin self-center text-brand-600" />}
                       </div>
                     </div>
                   )}
@@ -312,7 +312,7 @@ export function TaskDetailDialog({
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-slate-800">
                               {a.user.name}
-                              {a.userId === me.id && <span className="text-emerald-600"> (you)</span>}
+                              {a.userId === me.id && <span className="text-brand-600"> (you)</span>}
                               <span className="ml-1 font-normal text-slate-400">· {a.user.employeeCode}</span>
                             </p>
                             <p className="truncate text-xs text-slate-500">

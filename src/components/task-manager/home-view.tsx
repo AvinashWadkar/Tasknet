@@ -116,25 +116,25 @@ export function HomeView({
   const emoji = hour < 12 ? '☀️' : hour < 17 ? '🌤️' : '🌆'
 
   const statCards = [
-    { label: 'Due Today', value: stats.dueToday, icon: CalendarCheck2, cls: 'bg-emerald-50 text-emerald-700' },
+    { label: 'Due Today', value: stats.dueToday, icon: CalendarCheck2, cls: 'bg-brand-50 text-brand-700' },
     { label: 'In Progress', value: stats.inProgress, icon: Clock3, cls: 'bg-violet-50 text-violet-700' },
-    { label: 'Completed', value: stats.completed, icon: CheckCircle2, cls: 'bg-teal-50 text-teal-700' },
+    { label: 'Completed', value: stats.completed, icon: CheckCircle2, cls: 'bg-brand-50 text-brand-700' },
     { label: 'Overdue', value: stats.overdue, icon: AlertTriangle, cls: 'bg-red-50 text-red-700' },
   ]
 
   return (
     <div className="space-y-6">
       {/* Greeting hero */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 p-6 text-white shadow-lg shadow-emerald-200 sm:p-8">
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-brand-500 p-6 text-white shadow-lg shadow-brand-200 sm:p-8">
         <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-20 right-32 h-44 w-44 rounded-full bg-teal-300/20 blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-20 right-32 h-44 w-44 rounded-full bg-brand-300/20 blur-2xl" />
         <div className="relative flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-emerald-100">{fmtDate(new Date())}</p>
+            <p className="text-sm font-medium text-brand-100">{fmtDate(new Date())}</p>
             <h1 className="mt-1 text-2xl font-bold sm:text-3xl">
               {greeting}, {firstName} {emoji}
             </h1>
-            <p className="mt-2 max-w-xl text-sm text-emerald-50/90">
+            <p className="mt-2 max-w-xl text-sm text-brand-50/90">
               {stats.dueToday > 0
                 ? `You have ${stats.dueToday} task${stats.dueToday > 1 ? 's' : ''} to close today. Let's get them done!`
                 : 'All caught up for today — great going!'}
@@ -142,7 +142,7 @@ export function HomeView({
           </div>
           <Button
             onClick={() => onNewTask()}
-            className="bg-white text-emerald-700 hover:bg-emerald-50 shadow-md"
+            className="bg-white text-brand-700 hover:bg-brand-50 shadow-md"
             size="lg"
           >
             <Plus className="mr-2 h-4 w-4" /> New Task
@@ -171,7 +171,7 @@ export function HomeView({
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-            <ListTodo className="h-5 w-5 text-emerald-600" /> My Tasks for Today
+            <ListTodo className="h-5 w-5 text-brand-600" /> My Tasks for Today
           </h2>
           <span className="text-xs text-slate-400">{fmtDate(new Date())}</span>
         </div>

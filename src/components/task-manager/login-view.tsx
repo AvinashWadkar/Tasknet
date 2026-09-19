@@ -33,13 +33,13 @@ export function LoginView({ onLogin }: { onLogin: (me: Me) => void }) {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-50 via-white to-teal-50 px-4 py-10">
-      <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-emerald-200/40 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-teal-200/40 blur-3xl" />
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-gradient-to-br from-brand-50 via-white to-brand-100 px-4 py-10">
+      <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-brand-200/40 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-brand-200/40 blur-3xl" />
 
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-lg shadow-brand-200">
             <ClipboardList className="h-8 w-8" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">Digitide TaskFlow</h1>
@@ -48,7 +48,7 @@ export function LoginView({ onLogin }: { onLogin: (me: Me) => void }) {
           </p>
         </div>
 
-        <Card className="border-slate-200/80 shadow-xl shadow-emerald-100/60">
+        <Card className="border-slate-200/80 shadow-xl shadow-brand-100/60">
           <CardHeader>
             <CardTitle className="text-xl">Sign in</CardTitle>
             <CardDescription>Use your Employee Code and password to continue</CardDescription>

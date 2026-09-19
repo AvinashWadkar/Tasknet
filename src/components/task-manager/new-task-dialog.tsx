@@ -110,7 +110,7 @@ export function NewTaskDialog({
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5 text-emerald-600" /> Create New Task
+            <Plus className="h-5 w-5 text-brand-600" /> Create New Task
           </DialogTitle>
           <DialogDescription>Assign a task to one or more employees — everyone assigned can track it together.</DialogDescription>
         </DialogHeader>
@@ -140,12 +140,12 @@ export function NewTaskDialog({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-1.5">
-                <Users className="h-4 w-4 text-emerald-600" /> Assign to employees * <span className="text-slate-400">({selected.size} selected)</span>
+                <Users className="h-4 w-4 text-brand-600" /> Assign to employees * <span className="text-slate-400">({selected.size} selected)</span>
               </Label>
             </div>
 
             {selectedUsers.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
+              <div className="flex flex-wrap gap-1.5 rounded-lg border border-brand-200 bg-brand-50/60 p-2">
                 {selectedUsers.map((u) => (
                   <span key={u.id} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm">
                     {u.name}

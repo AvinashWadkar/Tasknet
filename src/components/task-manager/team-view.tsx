@@ -61,7 +61,7 @@ function EmployeeRow({
             <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">{emp.stats.overdue} overdue</span>
           )}
           {emp.stats.completed > 0 && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">{emp.stats.completed} done</span>
+            <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-semibold text-brand-700">{emp.stats.completed} done</span>
           )}
           {emp.stats.aborted > 0 && (
             <span className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white">{emp.stats.aborted} aborted</span>
@@ -83,7 +83,7 @@ function EmployeeRow({
                 <button
                   key={t.id}
                   onClick={() => onOpenTask(t.id)}
-                  className="flex w-full items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-left transition hover:border-emerald-200 hover:bg-emerald-50/40"
+                  className="flex w-full items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-left transition hover:border-brand-200 hover:bg-brand-50/40"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-800">{t.title}</p>
@@ -167,7 +167,7 @@ function TaskRow({ task, onOpenTask }: { task: FlatTask; onOpenTask: (id: string
   return (
     <button
       onClick={() => onOpenTask(task.id)}
-      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/30 hover:shadow"
+      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-sm transition hover:border-brand-300 hover:bg-brand-50/30 hover:shadow"
       aria-label={`Task: ${task.title}`}
     >
       <div className="min-w-0 flex-1">
@@ -262,10 +262,10 @@ export function TeamView({
   const statCards = totals
     ? [
         { label: 'Team Members', value: totals.employees, icon: Users, cls: 'bg-slate-100 text-slate-700' },
-        { label: 'Total Tasks', value: totals.total, icon: ListTodo, cls: 'bg-teal-50 text-teal-700' },
+        { label: 'Total Tasks', value: totals.total, icon: ListTodo, cls: 'bg-brand-50 text-brand-700' },
         { label: 'Pending', value: totals.pending, icon: Clock3, cls: 'bg-amber-50 text-amber-700' },
         { label: 'In Progress', value: totals.inProgress, icon: Clock3, cls: 'bg-violet-50 text-violet-700' },
-        { label: 'Completed', value: totals.completed, icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-700' },
+        { label: 'Completed', value: totals.completed, icon: CheckCircle2, cls: 'bg-brand-50 text-brand-700' },
         { label: 'Overdue', value: totals.overdue, icon: AlertTriangle, cls: 'bg-red-50 text-red-700' },
         { label: 'Aborted', value: totals.aborted, icon: Ban, cls: 'bg-red-100 text-red-700' },
       ]
@@ -275,7 +275,7 @@ export function TeamView({
     <div className="space-y-5">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-          <Network className="h-5 w-5 text-emerald-600" />
+          <Network className="h-5 w-5 text-brand-600" />
           {data?.scope === 'org' ? 'Organization View' : 'My Team View'}
         </h2>
         <p className="text-sm text-slate-500">

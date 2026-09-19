@@ -104,7 +104,7 @@ export function ForcePasswordModal({
               autoFocus
             />
             <ul className="space-y-0.5 text-xs text-slate-500">
-              <li className={policyOk ? 'text-emerald-600' : ''}>
+              <li className={policyOk ? 'text-brand-600' : ''}>
                 Min 8 characters with an uppercase letter, lowercase letter, number and special character
               </li>
             </ul>

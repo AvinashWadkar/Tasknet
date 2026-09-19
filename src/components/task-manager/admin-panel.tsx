@@ -193,7 +193,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
     <div className="space-y-5">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-          <ShieldCheck className="h-5 w-5 text-emerald-600" /> Admin — User Management
+          <ShieldCheck className="h-5 w-5 text-brand-600" /> Admin — User Management
         </h2>
         <p className="text-sm text-slate-500">Only you can create employee IDs. Hierarchy links automatically by L1 Manager Email.</p>
       </div>
@@ -203,7 +203,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
         <Card className="border-slate-200/80 shadow-sm xl:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <UserPlus className="h-4 w-4 text-emerald-600" /> Create Employee ID
+              <UserPlus className="h-4 w-4 text-brand-600" /> Create Employee ID
             </CardTitle>
             <CardDescription>New users get the default password and must change it at first login.</CardDescription>
           </CardHeader>
@@ -237,7 +237,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
                 Create User ID
               </Button>
 
-              <p className="flex items-start gap-1.5 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              <p className="flex items-start gap-1.5 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-800">
                 <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
                   Default password: <code className="font-bold">Digitide@123</code> — mandatory change on first login.
@@ -253,7 +253,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Users2 className="h-4 w-4 text-emerald-600" /> All Users
+                <Users2 className="h-4 w-4 text-brand-600" /> All Users
                 {users && <span className="text-sm font-normal text-slate-400">({users.length})</span>}
               </CardTitle>
               <CardDescription>
@@ -287,7 +287,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filtered.map((u) => (
-                      <tr key={u.id} className="transition hover:bg-emerald-50/40">
+                      <tr key={u.id} className="transition hover:bg-brand-50/40">
                         <td className="px-3 py-2.5">
                           <p className="font-medium text-slate-800">
                             {u.name} {u.role === 'ADMIN' && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>}
@@ -320,7 +320,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-slate-400 hover:bg-emerald-50 hover:text-emerald-700"
+                              className="h-7 w-7 text-slate-400 hover:bg-brand-50 hover:text-brand-700"
                               aria-label={`Reset password for ${u.name}`}
                               title="Reset password"
                               onClick={() => openReset(u)}
@@ -351,7 +351,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-emerald-600" />
+              <KeyRound className="h-4 w-4 text-brand-600" />
               Reset password for {resetTarget?.name}?
             </AlertDialogTitle>
             <AlertDialogDescription asChild>

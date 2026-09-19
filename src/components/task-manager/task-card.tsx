@@ -30,7 +30,7 @@ export function TaskCard({
   return (
     <div
       className={cn(
-        'group cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md',
+        'group cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md',
         overdue ? 'border-red-200' : 'border-slate-200',
         aborted && 'bg-slate-50/80 hover:border-slate-200 hover:shadow-sm',
         busy && 'pointer-events-none opacity-60'
@@ -43,7 +43,7 @@ export function TaskCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className={cn('truncate font-semibold', aborted ? 'text-slate-500' : 'text-slate-900 group-hover:text-emerald-700')}>
+          <h3 className={cn('truncate font-semibold', aborted ? 'text-slate-500' : 'text-slate-900 group-hover:text-brand-700')}>
             {task.title}
           </h3>
           {task.description && <p className="mt-0.5 line-clamp-1 text-sm text-slate-500">{task.description}</p>}
@@ -95,7 +95,7 @@ export function TaskCard({
             ▶ Start working
           </button>
           <button
-            className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
+            className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
             onClick={() => onQuickStatus?.('COMPLETED')}
           >
             ✓ Mark done

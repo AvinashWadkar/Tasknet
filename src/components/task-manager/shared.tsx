@@ -9,7 +9,7 @@ export function StatusBadge({ status, className }: { status: TaskStatus; classNa
   const styles: Record<TaskStatus, string> = {
     PENDING: 'bg-amber-100 text-amber-800 border-amber-200',
     IN_PROGRESS: 'bg-violet-100 text-violet-800 border-violet-200',
-    COMPLETED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    COMPLETED: 'bg-brand-100 text-brand-800 border-brand-200',
   }
   return (
     <Badge variant="outline" className={cn(styles[status], 'font-medium', className)}>
@@ -36,8 +36,8 @@ export function AbortedBadge({ className }: { className?: string }) {
 }
 
 const AVATAR_COLORS = [
-  'bg-emerald-600',
-  'bg-teal-600',
+  'bg-slate-600',
+  'bg-brand-600',
   'bg-violet-600',
   'bg-amber-600',
   'bg-rose-600',

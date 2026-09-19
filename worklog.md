@@ -99,3 +99,21 @@ Stage Summary:
 - Feature shipped: only the task creator can abort a task (from the task detail dialog footer), with optional reason captured in the shared history. Aborting locks the task: no status updates by assignees, no edits/new assignees; comments remain open.
 - Aborted tasks stay visible everywhere (home today list, calendar with red dot, team view) but are excluded from all active stats and overdue flags, and can never be re-opened into active counts.
 - Demo state: 2 aborted test tasks exist — "Q3 vendor reconciliation" (creator Avinash → Suresh, due 19 Sep) and "Downline abort check" (creator Avinash → Rahul, due 19 Sep); "Browser abort test" (creator Avinash → Suresh, due 20 Sep 18:00 IST) aborted with reason "Requirement changed during sprint review".
+
+---
+Task ID: 6
+Agent: Z.ai Code (main)
+Task: Rebrand the entire UI from Emerald Green to the user-specified brand colour #2E4566 (navy blue).
+
+Work Log:
+- Generated a Tailwind 4 brand scale around #2E4566 (hsl 215/38%/29%) via script: brand-50 #f0f4f9 → brand-950 #0d1726, with brand-600 = #2e4566 exactly.
+- globals.css: added static @theme block with --color-brand-50..950; --primary → #2e4566, --ring → brand-500, light --chart-2 → brand-500; dark mode --primary → brand-200, --primary-foreground → brand-900, --ring/--chart-2/--sidebar-primary → brand-400.
+- Mechanical replace (longest-token-first) of every emerald-N/teal-N utility across 11 components: task-card, home-view, team-view, admin-panel, app, login-view, calendar-view, new-task-dialog, task-detail-dialog, force-password-modal, shared (emerald-N → brand-N; teal-N → brand-N).
+- Deliberate distinctions: StatusBadge COMPLETED now brand-100/800/200; history TASK_CREATED & ASSIGNED chips unified to brand-100/700; AVATAR_COLORS pool teal-600 → slate-600 to avoid duplicate navy slot.
+- Hand-tuned gradients for depth: home hero from-brand-700 via-brand-600 to-brand-500 (shadow-brand-200); header/loading/login logo tiles from-brand-400 to-brand-700; login/loading page wash from-brand-50 via-white to-brand-100 with brand-200 blur blobs.
+- Verified: grep confirms zero emerald/teal left in src; lint clean; Agent Browser (desktop 1280 + 390px mobile) — login page, admin panel, employee home hero, calendar (selected day/filters/dots), team view all render in navy; status semantics (amber/violet/red) and footer unchanged; no console errors or page errors.
+
+Stage Summary:
+- Site-wide brand colour is now #2E4566: shadcn --primary drives buttons/nav pills/focus rings, and the brand-50..950 scale drives tints, hover borders, chips, gradients and icons.
+- Green (emerald/teal) fully removed; semantic status colours intentionally preserved (amber Pending, violet In Progress, red Overdue/Aborted).
+- Dark mode tokens also rebranded (light-navy primary on dark surfaces).

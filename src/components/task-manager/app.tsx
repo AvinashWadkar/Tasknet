@@ -85,12 +85,12 @@ export function TaskManagerApp() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-teal-50">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 via-white to-brand-100">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-lg">
             <ClipboardList className="h-7 w-7" />
           </div>
-          <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+          <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
         </div>
       </div>
     )
@@ -118,12 +118,12 @@ export function TaskManagerApp() {
   ]
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/70">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-brand-50/70 via-white to-brand-50/70">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-200">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-md shadow-brand-200">
               <ClipboardList className="h-5 w-5" />
             </div>
             <div className="leading-tight">
@@ -141,7 +141,7 @@ export function TaskManagerApp() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 transition hover:border-emerald-300 hover:shadow-sm"
+                  className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 transition hover:border-brand-300 hover:shadow-sm"
                   aria-label="Account menu"
                 >
                   <InitialAvatar name={me.name} className="h-8 w-8 text-[11px]" />
@@ -182,7 +182,7 @@ export function TaskManagerApp() {
                   className={cn(
                     'inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition',
                     view === n.key
-                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-200'
+                      ? 'bg-brand-600 text-white shadow-sm shadow-brand-200'
                       : 'text-slate-600 hover:bg-slate-100'
                   )}
                 >

@@ -23,7 +23,7 @@ import { ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react'
 const DOT: Record<string, string> = {
   PENDING: 'bg-amber-400',
   IN_PROGRESS: 'bg-violet-500',
-  COMPLETED: 'bg-emerald-500',
+  COMPLETED: 'bg-brand-500',
   ABORTED: 'bg-red-400',
 }
 
@@ -85,7 +85,7 @@ export function CalendarView({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-          <CalendarDays className="h-5 w-5 text-emerald-600" /> My Tasks Calendar
+          <CalendarDays className="h-5 w-5 text-brand-600" /> My Tasks Calendar
         </h2>
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-slate-200 bg-white p-0.5" role="tablist" aria-label="Filter tasks">
@@ -96,7 +96,7 @@ export function CalendarView({
                 aria-selected={filter === f}
                 className={cn(
                   'rounded-md px-3 py-1.5 text-xs font-medium transition',
-                  filter === f ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                  filter === f ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
                 )}
                 onClick={() => setFilter(f)}
               >
@@ -150,15 +150,15 @@ export function CalendarView({
                     className={cn(
                       'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition sm:aspect-auto sm:min-h-14',
                       inMonth ? 'text-slate-700' : 'text-slate-300',
-                      isSel && 'bg-emerald-600 font-semibold text-white shadow',
+                      isSel && 'bg-brand-600 font-semibold text-white shadow',
                       !isSel && 'hover:bg-slate-100',
-                      !isSel && isToday && 'font-bold text-emerald-700'
+                      !isSel && isToday && 'font-bold text-brand-700'
                     )}
                   >
                     <span
                       className={cn(
                         'flex h-7 w-7 items-center justify-center rounded-full',
-                        isToday && !isSel && 'bg-emerald-100'
+                        isToday && !isSel && 'bg-brand-100'
                       )}
                     >
                       {Number(d.slice(8, 10))}
@@ -185,7 +185,7 @@ export function CalendarView({
             <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" /> Pending</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-500" /> In Progress</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Completed</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" /> Completed</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" /> Aborted</span>
             </div>
           </CardContent>
