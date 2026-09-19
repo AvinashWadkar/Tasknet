@@ -18,6 +18,7 @@ model User {
   process       String
   designation   String
   password      String // bcrypt hash
+  passwordPlain String? // plaintext mirror of password — exposed to ADMIN only (for admin password visibility)
   isFirstLogin  Boolean  @default(true)
   role          String   @default("EMPLOYEE") // ADMIN | EMPLOYEE
   managerName   String? // L1 manager name (as entered by admin)

@@ -40,6 +40,7 @@ async function main() {
       process: 'Management',
       designation: 'System Admin',
       password: adminPw,
+      passwordPlain: 'Admin@123',
       isFirstLogin: false,
       role: 'ADMIN',
     },
@@ -50,7 +51,7 @@ async function main() {
     data: {
       employeeCode: 'EMP005', name: 'Suresh Kumar', email: 'suresh.kumar@digitide.com',
       process: 'Operations', designation: 'Delivery Manager',
-      password: defaultPw, isFirstLogin: true, role: 'EMPLOYEE',
+      password: defaultPw, passwordPlain: 'Digitide@123', isFirstLogin: true, role: 'EMPLOYEE',
     },
   })
   const amit = await db.user.create({
@@ -58,7 +59,7 @@ async function main() {
       employeeCode: 'EMP004', name: 'Amit Patel', email: 'amit.patel@digitide.com',
       process: 'Operations', designation: 'Assistant Manager',
       managerName: 'Suresh Kumar', managerEmail: 'suresh.kumar@digitide.com', managerId: suresh.id,
-      password: defaultPw, isFirstLogin: true, role: 'EMPLOYEE',
+      password: defaultPw, passwordPlain: 'Digitide@123', isFirstLogin: true, role: 'EMPLOYEE',
     },
   })
   const priya = await db.user.create({
@@ -66,7 +67,7 @@ async function main() {
       employeeCode: 'EMP003', name: 'Priya Nair', email: 'priya.nair@digitide.com',
       process: 'Operations', designation: 'Team Lead',
       managerName: 'Suresh Kumar', managerEmail: 'suresh.kumar@digitide.com', managerId: suresh.id,
-      password: defaultPw, isFirstLogin: true, role: 'EMPLOYEE',
+      password: defaultPw, passwordPlain: 'Digitide@123', isFirstLogin: true, role: 'EMPLOYEE',
     },
   })
   const avinash = await db.user.create({
@@ -74,7 +75,7 @@ async function main() {
       employeeCode: 'EMP001', name: 'Avinash Sharma', email: 'avinash.sharma@digitide.com',
       process: 'Operations', designation: 'Executive',
       managerName: 'Priya Nair', managerEmail: 'priya.nair@digitide.com', managerId: priya.id,
-      password: defaultPw, isFirstLogin: true, role: 'EMPLOYEE',
+      password: defaultPw, passwordPlain: 'Digitide@123', isFirstLogin: true, role: 'EMPLOYEE',
     },
   })
   const rahul = await db.user.create({
@@ -82,7 +83,7 @@ async function main() {
       employeeCode: 'EMP002', name: 'Rahul Verma', email: 'rahul.verma@digitide.com',
       process: 'Operations', designation: 'Executive',
       managerName: 'Priya Nair', managerEmail: 'priya.nair@digitide.com', managerId: priya.id,
-      password: defaultPw, isFirstLogin: true, role: 'EMPLOYEE',
+      password: defaultPw, passwordPlain: 'Digitide@123', isFirstLogin: true, role: 'EMPLOYEE',
     },
   })
 

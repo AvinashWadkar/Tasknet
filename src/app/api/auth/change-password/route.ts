@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const hash = await bcrypt.hash(String(newPassword), 10)
     await db.user.update({
       where: { id: user.id },
-      data: { password: hash, isFirstLogin: false },
+      data: { password: hash, passwordPlain: String(newPassword), isFirstLogin: false },
     })
     return NextResponse.json({ ok: true })
   } catch (e) {

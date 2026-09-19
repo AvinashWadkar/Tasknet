@@ -65,6 +65,7 @@ export interface DirectoryUser {
   managerEmail?: string | null
   isFirstLogin?: boolean
   createdAt?: string
+  password?: string | null // ADMIN-only: current password (plaintext mirror)
 }
 
 export interface TeamTask {

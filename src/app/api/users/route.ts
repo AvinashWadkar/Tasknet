@@ -25,11 +25,12 @@ export async function GET() {
       managerEmail: true,
       isFirstLogin: true,
       createdAt: true,
+      passwordPlain: true, // ADMIN-only; stripped below for non-admins
     },
   })
 
   if (session.role !== 'ADMIN') {
-    // Non-admins only need directory basics to assign tasks
+    // Non-admins only need directory basics to assign tasks — never passwords
     return NextResponse.json({
       users: users.map((u) => ({
         id: u.id,
@@ -41,7 +42,14 @@ export async function GET() {
       })),
     })
   }
-  return NextResponse.json({ users })
+  // Admin sees every user's current password (plaintext mirror)
+  return NextResponse.json({
+    users: users.map((u) => ({
+      ...u,
+      password: u.passwordPlain ?? null,
+      passwordPlain: undefined,
+    })),
+  })
 }
 
 /** POST /api/users — ADMIN only: create a new employee ID. */
@@ -103,6 +111,7 @@ export async function POST(req: NextRequest) {
         managerEmail: managerEmail || null,
         managerId,
         password: hash,
+        passwordPlain: DEFAULT_PASSWORD,
         isFirstLogin: true,
         role: 'EMPLOYEE',
       },

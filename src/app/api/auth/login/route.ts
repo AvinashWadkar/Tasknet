@@ -19,6 +19,11 @@ export async function POST(req: NextRequest) {
     if (!ok) {
       return NextResponse.json({ error: 'Invalid Employee Code or Password' }, { status: 401 })
     }
+    // Lazy backfill: if the plaintext mirror is missing (legacy rows), populate it
+    // from the just-verified password so admin password visibility stays accurate.
+    if (!user.passwordPlain) {
+      await db.user.update({ where: { id: user.id }, data: { passwordPlain: String(password) } })
+    }
     await setSessionCookie(user.id)
     return NextResponse.json({
       user: {
