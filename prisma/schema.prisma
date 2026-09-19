@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// User: employee with org-hierarchy link (manager) + auth
+// ─────────────────────────────────────────────────────────────
+model User {
+  id            String   @id @default(cuid())
+  employeeCode  String   @unique
+  name          String
+  email         String   @unique
+  process       String
+  designation   String
+  password      String // bcrypt hash
+  isFirstLogin  Boolean  @default(true)
+  role          String   @default("EMPLOYEE") // ADMIN | EMPLOYEE
+  managerName   String? // L1 manager name (as entered by admin)
+  managerEmail  String? // L1 manager email (as entered by admin)
+  managerId     String? // resolved link to manager User (by email match)
+  manager       User?    @relation("OrgTree", fields: [managerId], references: [id])
+  reports       User[]   @relation("OrgTree")
+  createdTasks  Task[]   @relation("TaskCreator")
+  assignments   TaskAssignment[]
+  activities    TaskActivity[]
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([managerId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task: created by one user, assignable to many users
+// ─────────────────────────────────────────────────────────────
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime
+  createdById String
+  creator     User     @relation("TaskCreator", fields: [createdById], references: [id])
+  assignments TaskAssignment[]
+  activities  TaskActivity[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([dueDate])
+  @@index([createdById])
+}
+
+// ─────────────────────────────────────────────────────────────
+// TaskAssignment: per-employee status of a task
+// status: PENDING | IN_PROGRESS | COMPLETED
+// ─────────────────────────────────────────────────────────────
+model TaskAssignment {
+  id          String    @id @default(cuid())
+  taskId      String
+  userId      String
+  status      String    @default("PENDING")
+  completedAt DateTime?
+  note        String?
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([taskId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// TaskActivity: complete audit trail of a task with timestamps
+// action: TASK_CREATED | ASSIGNED | STATUS_UPDATED | COMMENT | TASK_UPDATED | REOPENED
+// ─────────────────────────────────────────────────────────────
+model TaskActivity {
+  id         String   @id @default(cuid())
+  taskId     String
+  actorId    String?
+  actorName  String
+  action     String
+  detail     String?
+  createdAt  DateTime @default(now())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
