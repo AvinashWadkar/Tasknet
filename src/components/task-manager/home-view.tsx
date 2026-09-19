@@ -218,7 +218,7 @@ export function HomeView({
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {todayTasks.map((t) => (
               <TaskCard
                 key={t.id}
@@ -237,7 +237,7 @@ export function HomeView({
       {upcoming.length > 0 && (
         <section>
           <h2 className="mb-3 text-lg font-semibold text-slate-900">Coming up next 7 days</h2>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {upcoming.map((t) => (
               <TaskCard key={t.id} task={t} me={me} onOpen={() => onOpenTask(t.id)} />
             ))}

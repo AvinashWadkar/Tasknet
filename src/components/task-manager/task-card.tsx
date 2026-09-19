@@ -2,9 +2,9 @@
 
 import { cn } from '@/lib/utils'
 import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
-import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
+import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, viewerStatus } from './shared'
 import type { Me, TaskDTO } from './types'
-import { CalendarClock, UserRound, AlarmClock } from 'lucide-react'
+import { CalendarClock, UserRound, AlarmClock, CheckCircle2 } from 'lucide-react'
 
 export function TaskCard({
   task,
@@ -30,7 +30,7 @@ export function TaskCard({
   return (
     <div
       className={cn(
-        'group cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md',
+        'group min-w-0 cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md',
         overdue ? 'border-red-200' : 'border-slate-200',
         aborted && 'bg-slate-50/80 hover:border-slate-200 hover:shadow-sm',
         busy && 'pointer-events-none opacity-60'
@@ -53,7 +53,7 @@ export function TaskCard({
             <AbortedBadge />
           ) : (
             <>
-              {mine ? <StatusBadge status={mine.status} /> : <StatusBadge status="PENDING" />}
+              <StatusBadge status={viewerStatus(task, me.id)} />
               {overdue && <OverdueBadge />}
             </>
           )}
@@ -71,6 +71,12 @@ export function TaskCard({
           <span className="inline-flex items-center gap-1 font-semibold text-red-600">
             <AlarmClock className="h-3.5 w-3.5" />
             Delayed by {delayLabel(task.dueDate)}
+          </span>
+        )}
+        {!aborted && mine?.status === 'COMPLETED' && mine.completedAt && (
+          <span className="inline-flex items-center gap-1 font-medium text-brand-700">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Completed on {fmtDate(mine.completedAt)}
           </span>
         )}
         <span className="inline-flex items-center gap-1">

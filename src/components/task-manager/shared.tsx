@@ -3,7 +3,22 @@
 import { Badge } from '@/components/ui/badge'
 import { Ban } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { STATUS_LABEL, type TaskStatus } from './types'
+import { STATUS_LABEL, type TaskDTO, type TaskStatus } from './types'
+
+/**
+ * Effective status for the current viewer: their own assignment status, or —
+ * for viewers without an assignment (e.g. the creator) — the aggregate of all
+ * assignee statuses (all done → Completed, any in progress → In Progress).
+ */
+export function viewerStatus(t: TaskDTO, meId: string): TaskStatus {
+  const mine = t.assignments.find((a) => a.userId === meId)
+  if (mine) return mine.status
+  if (t.assignments.length > 0) {
+    if (t.assignments.every((a) => a.status === 'COMPLETED')) return 'COMPLETED'
+    if (t.assignments.some((a) => a.status === 'IN_PROGRESS')) return 'IN_PROGRESS'
+  }
+  return 'PENDING'
+}
 
 export function StatusBadge({ status, className }: { status: TaskStatus; className?: string }) {
   const styles: Record<TaskStatus, string> = {

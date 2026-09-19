@@ -18,6 +18,30 @@ const taskInclude = {
 }
 
 /**
+ * Date-window filter for list scopes (today / date / range).
+ * - filter=created → the creator tracks a task under the due date they set.
+ * - otherwise → the task matches if it is DUE inside the window OR my own
+ *   assignment was COMPLETED inside the window (an employee's calendar
+ *   reflects the day the work was actually finished, not the deadline).
+ */
+function applyTaskWindow(
+  where: Record<string, unknown>,
+  bounds: { gte: Date; lte: Date },
+  filter: string,
+  userId: string
+) {
+  if (filter === 'created') {
+    where.dueDate = bounds
+  } else {
+    where.AND = [
+      {
+        OR: [{ dueDate: bounds }, { assignments: { some: { userId, completedAt: bounds } } }],
+      },
+    ]
+  }
+}
+
+/**
  * GET /api/tasks?scope=today|date|range|all&date=YYYY-MM-DD&from=...&to=...&filter=assigned|created|all
  * Returns tasks the signed-in user created or is assigned to.
  */
@@ -41,12 +65,12 @@ export async function GET(req: NextRequest) {
 
   if (scope === 'today' && date) {
     const { start, end } = istDayBounds(date)
-    where.dueDate = { gte: start, lte: end }
+    applyTaskWindow(where, { gte: start, lte: end }, filter, session.id)
   } else if (scope === 'date' && date) {
     const { start, end } = istDayBounds(date)
-    where.dueDate = { gte: start, lte: end }
+    applyTaskWindow(where, { gte: start, lte: end }, filter, session.id)
   } else if (scope === 'range' && from && to) {
-    where.dueDate = { gte: istDayBounds(from).start, lte: istDayBounds(to).end }
+    applyTaskWindow(where, { gte: istDayBounds(from).start, lte: istDayBounds(to).end }, filter, session.id)
   }
 
   const tasks = await db.task.findMany({

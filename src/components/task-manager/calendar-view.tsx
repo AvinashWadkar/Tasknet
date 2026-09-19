@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
+import { viewerStatus } from './shared'
 import {
   WEEKDAY_LABELS,
   monthGridDates,
@@ -25,6 +26,31 @@ const DOT: Record<string, string> = {
   IN_PROGRESS: 'bg-violet-500',
   COMPLETED: 'bg-brand-500',
   ABORTED: 'bg-red-400',
+}
+
+/** YYYY-MM-DD (IST) of an instant */
+const istDayOf = (iso: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(iso))
+
+/**
+ * The day a task sits on MY calendar.
+ * - Creator: always under the due date they set (deadline tracking).
+ * - Assignee: finished work lands on the day I actually completed it
+ *   (e.g. due 18 Sept, completed 20 Sept → shows on 20 Sept, not 18).
+ * - Open / aborted tasks: stay on their due date.
+ */
+function calendarDayOf(t: TaskDTO, meId: string): string {
+  if (t.creator.id !== meId && t.status !== 'ABORTED') {
+    const mine = t.assignments.find((a) => a.userId === meId)
+    if (mine?.status === 'COMPLETED' && mine.completedAt) return istDayOf(mine.completedAt)
+  }
+  return istDayOf(t.dueDate)
+}
+
+/** Dot colour state: my own status, or the aggregate progress for creator-only views. */
+function dotStatus(t: TaskDTO, meId: string): 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'ABORTED' {
+  if (t.status === 'ABORTED') return 'ABORTED'
+  return viewerStatus(t, meId)
 }
 
 export function CalendarView({
@@ -71,13 +97,13 @@ export function CalendarView({
   const byDay = useMemo(() => {
     const map = new Map<string, TaskDTO[]>()
     for (const t of tasks || []) {
-      const d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(t.dueDate))
+      const d = calendarDayOf(t, me.id)
       const arr = map.get(d) || []
       arr.push(t)
       map.set(d, arr)
     }
     return map
-  }, [tasks])
+  }, [tasks, me.id])
 
   const selectedTasks = byDay.get(selected) || []
 
@@ -165,10 +191,7 @@ export function CalendarView({
                     </span>
                     <div className="mt-0.5 flex h-1.5 items-center gap-0.5">
                       {dayTasks.slice(0, 3).map((t) => {
-                        const st =
-                          t.status === 'ABORTED'
-                            ? 'ABORTED'
-                            : t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING'
+                        const st = dotStatus(t, me.id)
                         return <span key={t.id} className={cn('h-1.5 w-1.5 rounded-full', isSel ? 'bg-white/90' : DOT[st])} />
                       })}
                       {dayTasks.length > 3 && (
@@ -188,6 +211,9 @@ export function CalendarView({
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" /> Completed</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" /> Aborted</span>
             </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+              Tasks you completed appear on the day you finished them — as the creator, you’ll see them under the due date you set.
+            </p>
           </CardContent>
         </Card>
 
@@ -198,7 +224,7 @@ export function CalendarView({
               <div>
                 <h3 className="font-semibold text-slate-900">{fmtDate(`${selected}T12:00:00+05:30`)}</h3>
                 <p className="text-xs text-slate-400">
-                  {selectedTasks.length} task{selectedTasks.length === 1 ? '' : 's'} due
+                  {selectedTasks.length} task{selectedTasks.length === 1 ? '' : 's'} scheduled
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={() => onNewTask(selected)}>
