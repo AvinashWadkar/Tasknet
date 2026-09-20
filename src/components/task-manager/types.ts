@@ -128,3 +128,117 @@ export interface PriorityItem {
   done: number
   total: number
 }
+
+// ── Reports (manager/admin performance view) ───────────────────────
+
+export interface ReportOption {
+  value: string
+  label: string
+}
+
+export interface ReportKpis {
+  employees: number
+  total: number
+  completed: number
+  onTime: number
+  late: number
+  pending: number
+  inProgress: number
+  overdue: number
+  aborted: number
+  completionRate: number
+  onTimeRate: number
+}
+
+export interface ReportStatusSlice {
+  key: string
+  label: string
+  value: number
+  color: string
+}
+
+export interface ReportMonthPoint {
+  key: string
+  label: string
+  due: number
+  completed: number
+  late: number
+}
+
+export interface ReportEmployeeStat {
+  id: string
+  name: string
+  employeeCode: string
+  process: string
+  designation: string
+  managerName: string | null
+  total: number
+  completed: number
+  onTime: number
+  late: number
+  pending: number
+  inProgress: number
+  overdue: number
+  aborted: number
+  completionRate: number
+  onTimeRate: number
+  avgDelayDays: number
+}
+
+export interface ReportGroupStat {
+  key: string
+  total: number
+  completed: number
+  overdue: number
+  open: number
+  aborted: number
+  completionRate: number
+}
+
+export interface ReportRowDTO {
+  taskId: string
+  title: string
+  assignedBy: string
+  dueDate: string
+  createdAt: string
+  taskState: 'ACTIVE' | 'ABORTED'
+  userId: string
+  userName: string
+  employeeCode: string
+  process: string
+  designation: string
+  managerId: string | null
+  managerName: string | null
+  status: TaskStatus
+  completedAt: string | null
+  aborted: boolean
+  overdue: boolean
+  onTime: boolean
+  delayDays: number
+}
+
+export interface ReportsResponse {
+  scope: 'team' | 'org'
+  options: {
+    months: ReportOption[]
+    processes: string[]
+    designations: string[]
+    managers: ReportOption[]
+    employees: ReportOption[]
+  }
+  kpis: ReportKpis
+  statusMix: ReportStatusSlice[]
+  monthly: ReportMonthPoint[]
+  byEmployee: ReportEmployeeStat[]
+  byProcess: ReportGroupStat[]
+  byDesignation: ReportGroupStat[]
+  rows: ReportRowDTO[]
+}
+
+export interface ReportFilterState {
+  months: string[]
+  processes: string[]
+  designations: string[]
+  managers: string[]
+  employees: string[]
+}

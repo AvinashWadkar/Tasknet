@@ -17,6 +17,7 @@ import { ForcePasswordModal } from './force-password-modal'
 import { HomeView } from './home-view'
 import { CalendarView } from './calendar-view'
 import { TeamView } from './team-view'
+import { ReportsView } from './reports-view'
 import { AdminPanel } from './admin-panel'
 import { NewTaskDialog } from './new-task-dialog'
 import { TaskDetailDialog } from './task-detail-dialog'
@@ -28,13 +29,14 @@ import {
   LayoutDashboard,
   CalendarDays,
   Network,
+  BarChart3,
   ShieldCheck,
   LogOut,
   Plus,
   Loader2,
 } from 'lucide-react'
 
-type View = 'home' | 'calendar' | 'team' | 'admin'
+type View = 'home' | 'calendar' | 'team' | 'reports' | 'admin'
 
 export function TaskManagerApp() {
   const { toast } = useToast()
@@ -114,6 +116,7 @@ export function TaskManagerApp() {
     { key: 'home', label: 'Home', icon: LayoutDashboard, show: true },
     { key: 'calendar', label: 'My Tasks', icon: CalendarDays, show: me.role !== 'ADMIN' },
     { key: 'team', label: 'Team View', icon: Network, show: Boolean(me.isManager) },
+    { key: 'reports', label: 'Reports', icon: BarChart3, show: Boolean(me.isManager) || me.role === 'ADMIN' },
     { key: 'admin', label: 'Admin', icon: ShieldCheck, show: me.role === 'ADMIN' },
   ]
 
@@ -210,6 +213,9 @@ export function TaskManagerApp() {
           <CalendarView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onNewTask={openNewTask} />
         )}
         {view === 'team' && <TeamView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} />}
+        {view === 'reports' && (me.isManager || me.role === 'ADMIN') && (
+          <ReportsView refreshKey={refreshKey} onOpenTask={setDetailTaskId} />
+        )}
         {view === 'admin' && me.role === 'ADMIN' && <AdminPanel refreshKey={refreshKey} />}
       </main>
 

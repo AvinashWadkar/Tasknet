@@ -319,9 +319,9 @@ export function TeamView({
             ))}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             {/* Employee-wise Task Status (left) */}
-            <Card className="border-slate-200/80 shadow-sm lg:col-span-2">
+            <Card className="min-w-0 border-slate-200/80 shadow-sm lg:col-span-2">
               <CardContent className="p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold text-slate-900">Employee-wise Task Status</h3>
@@ -361,7 +361,7 @@ export function TeamView({
             </Card>
 
             {/* All downline tasks (right) */}
-            <Card className="border-slate-200/80 shadow-sm lg:col-span-3">
+            <Card className="min-w-0 border-slate-200/80 shadow-sm lg:col-span-3">
               <CardContent className="p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-semibold text-slate-900">
