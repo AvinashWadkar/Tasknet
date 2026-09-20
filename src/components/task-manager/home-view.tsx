@@ -8,7 +8,7 @@ import { TaskCard } from './task-card'
 import { AiPriorityPanel } from './ai-priority-panel'
 import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
-import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2 } from 'lucide-react'
+import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar } from 'lucide-react'
 import { initialsOf } from './shared'
 import { Button } from '@/components/ui/button'
 
@@ -153,7 +153,8 @@ export function HomeView({
 
   const firstName = me.name.split(' ')[0]
   const hour = istHour()
-  const emoji = hour < 12 ? '☀️' : hour < 17 ? '🌤️' : '🌆'
+  const TimeIcon = hour < 12 ? Sunrise : hour < 17 ? SunMedium : MoonStar
+  const timeIconCls = hour < 17 ? 'text-amber-300' : 'text-brand-200'
 
   const statTiles = [
     {
@@ -240,9 +241,9 @@ export function HomeView({
                   </span>
                   <span
                     aria-hidden="true"
-                    className="ml-1.5 inline-block animate-float align-middle text-[0.85em] motion-reduce:animate-none"
+                    className="ml-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 ring-1 ring-white/20 align-middle backdrop-blur-sm sm:h-8 sm:w-8"
                   >
-                    {emoji}
+                    <TimeIcon className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${timeIconCls}`} />
                   </span>
                 </h1>
                 <p className="mt-2 max-w-xl text-sm leading-relaxed text-brand-100/85 sm:text-[15px]">

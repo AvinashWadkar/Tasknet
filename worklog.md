@@ -173,3 +173,15 @@ Work Log:
 Stage Summary:
 - Home header is now a modern bento-glass hero: layered navy gradient + dot grid + glows, glass date/live-clock chips, serif-italic gradient name, glassmorphic stat tiles (red pulsing when overdue), today's-progress bar, and micro-interactions (floating emoji, rotating Plus, tile/button hover lifts).
 - Old standalone stat-cards row removed — all four KPIs now live inside the hero, making the header the dashboard centerpiece; all Task 7 behaviors (overdue roll-forward, delayed-by chips, AI panel) verified intact.
+
+---
+Task ID: 10
+Agent: Z.ai Code (main)
+Task: "☀️ emoji after Good Morning Avinash is spoiling the look. Replace this emoji with something."
+
+Work Log:
+- home-view.tsx: replaced the ☀️/🌤️/🌆 emoji after the greeting name with a small circular glass badge (h-7/h-8 rounded-full bg-white/10 ring-white/20 backdrop-blur) holding a time-of-day Lucide icon — Sunrise (before 12), SunMedium (12–17), MoonStar (evening) — colored amber-300 for day, brand-200 for evening; removed the now-unused emoji variable; float animation on the accent dropped for a calmer look.
+- Verified via Agent Browser (desktop 1280 + mobile 390 as Avinash): badge renders inline after the serif-italic name, hero otherwise unchanged (chips, tiles, progress bar); scrollWidth 390 at mobile (no overflow); zero console/page errors; lint clean. Screenshot /tmp/task10-hero-icon.png.
+
+Stage Summary:
+- Greeting accent is now a subtle glass icon badge that adapts to time of day (Sunrise/SunMedium/MoonStar) instead of a raw emoji — consistent with the site's Lucide icon language and the navy brand palette.
