@@ -27,6 +27,7 @@ import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar } from './shared
 import { api } from './api'
 import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
 import { fmtDateTime, fmtDate, fmtTime, delayLabel } from '@/lib/dates'
+import { recurrenceLabel } from '@/lib/recurring'
 import { cn } from '@/lib/utils'
 import {
   Loader2,
@@ -44,6 +45,7 @@ import {
   Ban,
   AlarmClock,
   Forward,
+  Repeat,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -55,6 +57,7 @@ const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
   TASK_UPDATED: { icon: History, cls: 'bg-sky-100 text-sky-700' },
   TASK_ABORTED: { icon: Ban, cls: 'bg-red-100 text-red-700' },
   TASK_HANDOFF: { icon: Forward, cls: 'bg-cyan-100 text-cyan-700' },
+  RECURRENCE: { icon: Repeat, cls: 'bg-emerald-100 text-emerald-700' },
 }
 
 export function TaskDetailDialog({
@@ -316,6 +319,19 @@ export function TaskDetailDialog({
                       <UserRound className="h-4 w-4 text-brand-600" />
                       Owner: <b className="font-semibold">{task.creator.id === me.id ? 'You' : task.creator.name}</b>
                     </span>
+                    {task.recurring && recurrenceLabel(task) && (
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <Repeat className="h-4 w-4 text-brand-600" aria-hidden="true" />
+                        <b className="font-semibold">{recurrenceLabel(task)}</b>
+                        {task.recurEndType === 'AFTER_N' && task.recurCount ? (
+                          <span className="text-slate-400">· occurrence {task.recurOccurrence ?? 1} of {task.recurCount}</span>
+                        ) : task.recurEndType === 'ON_DATE' && task.recurEndDate ? (
+                          <span className="text-slate-400">· until {fmtDate(task.recurEndDate)}</span>
+                        ) : (
+                          <span className="text-slate-400">· no end date</span>
+                        )}
+                      </span>
+                    )}
                   </div>
 
                   {/* My status actions */}

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
-import { istDayBounds, istDueDate } from '@/lib/dates'
+import { istDayBounds, istDueDate, fmtDate } from '@/lib/dates'
+import { recurrenceLabel, type RecurFreq, type RecurEndType } from '@/lib/recurring'
 
 const taskInclude = {
   creator: { select: { id: true, name: true, employeeCode: true, designation: true } },
@@ -123,30 +124,86 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No valid assignees found' }, { status: 400 })
     }
 
+    // ── Recurrence (optional) ──────────────────────────────────────
+    const recurring = body.recurring === true
+    let recurFreq: RecurFreq | null = null
+    let recurInterval: number | null = null
+    let recurEndType: RecurEndType | null = null
+    let recurEndDate: Date | null = null
+    let recurCount: number | null = null
+    if (recurring) {
+      if (!['DAILY', 'WEEKLY', 'MONTHLY'].includes(String(body.recurFreq))) {
+        return NextResponse.json({ error: 'Choose how often the task repeats' }, { status: 400 })
+      }
+      recurFreq = body.recurFreq
+      recurInterval = Math.min(99, Math.max(1, Math.floor(Number(body.recurInterval) || 1)))
+      recurEndType = ['NEVER', 'ON_DATE', 'AFTER_N'].includes(String(body.recurEndType))
+        ? body.recurEndType
+        : 'NEVER'
+      if (recurEndType === 'ON_DATE') {
+        const raw = String(body.recurEndDate || '')
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+          return NextResponse.json({ error: 'Pick the date the series should end on' }, { status: 400 })
+        }
+        recurEndDate = istDueDate(raw, '23:59')
+        if (recurEndDate.getTime() < dueDate.getTime()) {
+          return NextResponse.json({ error: 'The end date must be on or after the first due date' }, { status: 400 })
+        }
+      }
+      if (recurEndType === 'AFTER_N') {
+        recurCount = Math.floor(Number(body.recurCount))
+        if (!Number.isFinite(recurCount) || recurCount < 2) {
+          return NextResponse.json({ error: 'Occurrence count must be at least 2' }, { status: 400 })
+        }
+      }
+    }
+
+    const activitiesData: { actorId: string; actorName: string; action: string; detail: string }[] = [
+      {
+        actorId: session.id,
+        actorName: `${session.name} (${session.employeeCode})`,
+        action: 'TASK_CREATED',
+        detail: `Task created by ${session.name}`,
+      },
+      {
+        actorId: session.id,
+        actorName: `${session.name} (${session.employeeCode})`,
+        action: 'ASSIGNED',
+        detail: `Assigned to ${validUsers.map((u) => u.name).join(', ')}`,
+      },
+    ]
+    if (recurring) {
+      const endNote =
+        recurEndType === 'ON_DATE' && recurEndDate
+          ? ` until ${fmtDate(recurEndDate)}`
+          : recurEndType === 'AFTER_N' && recurCount
+            ? ` — ${recurCount} times total`
+            : ' — no end date'
+      activitiesData.push({
+        actorId: session.id,
+        actorName: `${session.name} (${session.employeeCode})`,
+        action: 'RECURRENCE',
+        detail: `Recurring series started — ${recurrenceLabel({ recurring: true, recurFreq, recurInterval })}${endNote}. The next occurrence is created automatically when every assignee completes this task.`,
+      })
+    }
+
     const task = await db.task.create({
       data: {
         title,
         description,
         dueDate,
         createdById: session.id,
+        recurring,
+        recurFreq: recurring ? recurFreq : null,
+        recurInterval: recurring ? recurInterval : null,
+        recurEndType: recurring ? recurEndType : null,
+        recurEndDate,
+        recurCount: recurring && recurEndType === 'AFTER_N' ? recurCount : null,
         assignments: {
           create: validUsers.map((u) => ({ userId: u.id })),
         },
         activities: {
-          create: [
-            {
-              actorId: session.id,
-              actorName: `${session.name} (${session.employeeCode})`,
-              action: 'TASK_CREATED',
-              detail: `Task created by ${session.name}`,
-            },
-            {
-              actorId: session.id,
-              actorName: `${session.name} (${session.employeeCode})`,
-              action: 'ASSIGNED',
-              detail: `Assigned to ${validUsers.map((u) => u.name).join(', ')}`,
-            },
-          ],
+          create: activitiesData,
         },
       },
       include: taskInclude,

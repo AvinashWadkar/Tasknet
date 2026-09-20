@@ -2,9 +2,10 @@
 
 import { cn } from '@/lib/utils'
 import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
+import { recurrenceLabel } from '@/lib/recurring'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, viewerStatus } from './shared'
 import type { Me, TaskDTO } from './types'
-import { CalendarClock, UserRound, AlarmClock, CheckCircle2 } from 'lucide-react'
+import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat } from 'lucide-react'
 
 export function TaskCard({
   task,
@@ -77,6 +78,12 @@ export function TaskCard({
           <span className="inline-flex items-center gap-1 font-medium text-brand-700">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Completed on {fmtDate(mine.completedAt)}
+          </span>
+        )}
+        {task.recurring && recurrenceLabel(task) && (
+          <span className="inline-flex items-center gap-1 font-medium text-brand-600">
+            <Repeat className="h-3.5 w-3.5" aria-hidden="true" />
+            {recurrenceLabel(task)}
           </span>
         )}
         <span className="inline-flex items-center gap-1">

@@ -1,0 +1,610 @@
+     1→'use client'
+     2→
+     3→import { useCallback, useEffect, useState } from 'react'
+     4→import { Button } from '@/components/ui/button'
+     5→import {
+     6→  Dialog,
+     7→  DialogContent,
+     8→  DialogDescription,
+     9→  DialogHeader,
+    10→  DialogTitle,
+    11→} from '@/components/ui/dialog'
+    12→import { Input } from '@/components/ui/input'
+    13→import { Label } from '@/components/ui/label'
+    14→import { Textarea } from '@/components/ui/textarea'
+    15→import {
+    16→  AlertDialog,
+    17→  AlertDialogAction,
+    18→  AlertDialogCancel,
+    19→  AlertDialogContent,
+    20→  AlertDialogDescription,
+    21→  AlertDialogFooter,
+    22→  AlertDialogHeader,
+    23→  AlertDialogTitle,
+    24→} from '@/components/ui/alert-dialog'
+    25→import { useToast } from '@/hooks/use-toast'
+    26→import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar } from './shared'
+    27→import { api } from './api'
+    28→import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
+    29→import { fmtDateTime, fmtDate, fmtTime, delayLabel } from '@/lib/dates'
+    30→import { cn } from '@/lib/utils'
+    31→import {
+    32→  Loader2,
+    33→  MessageSquarePlus,
+    34→  CalendarClock,
+    35→  UserRound,
+    36→  CheckCircle2,
+    37→  PlayCircle,
+    38→  Rewind,
+    39→  Users,
+    40→  StickyNote,
+    41→  Flag,
+    42→  Plus,
+    43→  History,
+    44→  Ban,
+    45→  AlarmClock,
+    46→  Forward,
+    47→} from 'lucide-react'
+    48→
+    49→const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
+    50→  TASK_CREATED: { icon: Flag, cls: 'bg-brand-100 text-brand-700' },
+    51→  ASSIGNED: { icon: Users, cls: 'bg-brand-100 text-brand-700' },
+    52→  STATUS_UPDATED: { icon: PlayCircle, cls: 'bg-violet-100 text-violet-700' },
+    53→  REOPENED: { icon: Rewind, cls: 'bg-amber-100 text-amber-700' },
+    54→  COMMENT: { icon: StickyNote, cls: 'bg-slate-100 text-slate-600' },
+    55→  TASK_UPDATED: { icon: History, cls: 'bg-sky-100 text-sky-700' },
+    56→  TASK_ABORTED: { icon: Ban, cls: 'bg-red-100 text-red-700' },
+    57→  TASK_HANDOFF: { icon: Forward, cls: 'bg-cyan-100 text-cyan-700' },
+    58→}
+    59→
+    60→export function TaskDetailDialog({
+    61→  taskId,
+    62→  me,
+    63→  onClose,
+    64→  onChanged,
+    65→}: {
+    66→  taskId: string | null
+    67→  me: Me
+    68→  onClose: () => void
+    69→  onChanged: () => void
+    70→}) {
+    71→  const [task, setTask] = useState<TaskDetailDTO | null>(null)
+    72→  const [canAct, setCanAct] = useState(false)
+    73→  const [error, setError] = useState<string | null>(null)
+    74→  const [statusBusy, setStatusBusy] = useState(false)
+    75→  const [comment, setComment] = useState('')
+    76→  const [commentBusy, setCommentBusy] = useState(false)
+    77→  const [addUsers, setAddUsers] = useState<{ id: string; name: string }[]>([])
+    78→  const [addSel, setAddSel] = useState<string | null>(null)
+    79→  const [addingBusy, setAddingBusy] = useState(false)
+    80→  const [abortOpen, setAbortOpen] = useState(false)
+    81→  const [abortReason, setAbortReason] = useState('')
+    82→  const [abortBusy, setAbortBusy] = useState(false)
+    83→  const [handoffOpen, setHandoffOpen] = useState(false)
+    84→  const [handoffUsers, setHandoffUsers] = useState<{ id: string; name: string }[]>([])
+    85→  const [handoffSel, setHandoffSel] = useState<string | null>(null)
+    86→  const [handoffNote, setHandoffNote] = useState('')
+    87→  const [handoffBusy, setHandoffBusy] = useState(false)
+    88→  const { toast } = useToast()
+    89→
+    90→  const load = useCallback(async () => {
+    91→    if (!taskId) return
+    92→    setError(null)
+    93→    setTask(null)
+    94→    try {
+    95→      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean }>(`/api/tasks/${taskId}`)
+    96→      setTask(res.task)
+    97→      setCanAct(res.canAct)
+    98→      if (res.canEdit) {
+    99→        api<{ users: { id: string; name: string; employeeCode: string }[] }>('/api/users')
+   100→          .then((r) => {
+   101→            setAddUsers(
+   102→              r.users
+   103→                .filter((u) => !res.task.assignments.some((a) => a.userId === u.id))
+   104→                .map((u) => ({ id: u.id, name: `${u.name} (${u.employeeCode})` }))
+   105→            )
+   106→          })
+   107→          .catch(() => {})
+   108→      }
+   109→    } catch (err) {
+   110→      setError(err instanceof Error ? err.message : 'Could not load task')
+   111→    }
+   112→  }, [taskId])
+   113→
+   114→  useEffect(() => {
+   115→    if (taskId) load()
+   116→  }, [taskId, load])
+   117→
+   118→  async function setStatus(status: TaskStatus) {
+   119→    if (!task) return
+   120→    setStatusBusy(true)
+   121→    try {
+   122→      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}/status`, {
+   123→        method: 'POST',
+   124→        body: JSON.stringify({ status }),
+   125→      })
+   126→      setTask((prev) => (prev ? { ...prev, assignments: res.task.assignments } : prev))
+   127→      onChanged()
+   128→    } catch (err) {
+   129→      setError(err instanceof Error ? err.message : 'Could not update status')
+   130→    } finally {
+   131→      setStatusBusy(false)
+   132→    }
+   133→  }
+   134→
+   135→  async function postComment() {
+   136→    if (!task || !comment.trim()) return
+   137→    setCommentBusy(true)
+   138→    try {
+   139→      const res = await api<{ activity: { id: string; actorName: string; action: string; detail: string; createdAt: string } }>(
+   140→        `/api/tasks/${task.id}/comment`,
+   141→        { method: 'POST', body: JSON.stringify({ text: comment.trim() }) }
+   142→      )
+   143→      setTask((prev) => (prev ? { ...prev, activities: [res.activity, ...prev.activities] } : prev))
+   144→      setComment('')
+   145→    } catch (err) {
+   146→      setError(err instanceof Error ? err.message : 'Could not add comment')
+   147→    } finally {
+   148→      setCommentBusy(false)
+   149→    }
+   150→  }
+   151→
+   152→  async function addAssignee() {
+   153→    if (!task || !addSel) return
+   154→    setAddingBusy(true)
+   155→    try {
+   156→      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}`, {
+   157→        method: 'PATCH',
+   158→        body: JSON.stringify({ addAssigneeIds: [addSel] }),
+   159→      })
+   160→      setTask((prev) => (prev ? { ...prev, assignments: res.task.assignments } : prev))
+   161→      setAddSel(null)
+   162→      setAddUsers((prev) => prev.filter((u) => u.id !== addSel))
+   163→      onChanged()
+   164→    } catch (err) {
+   165→      setError(err instanceof Error ? err.message : 'Could not add assignee')
+   166→    } finally {
+   167→      setAddingBusy(false)
+   168→    }
+   169→  }
+   170→
+   171→  async function abortTask() {
+   172→    if (!task) return
+   173→    setAbortBusy(true)
+   174→    try {
+   175→      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}/abort`, {
+   176→        method: 'POST',
+   177→        body: JSON.stringify({ reason: abortReason.trim() || undefined }),
+   178→      })
+   179→      setTask(res.task)
+   180→      setAbortOpen(false)
+   181→      setAbortReason('')
+   182→      onChanged()
+   183→      toast({ title: 'Task aborted', description: 'Assignees can no longer update their status.' })
+   184→    } catch (err) {
+   185→      setError(err instanceof Error ? err.message : 'Could not abort task')
+   186→    } finally {
+   187→      setAbortBusy(false)
+   188→    }
+   189→  }
+   190→
+   191→  function openHandoff() {
+   192→    setHandoffSel(null)
+   193→    setHandoffNote('')
+   194→    setHandoffUsers([])
+   195→    api<{ users: { id: string; name: string; employeeCode: string }[] }>('/api/users')
+   196→      .then((r) =>
+   197→        setHandoffUsers(
+   198→          r.users
+   199→            .filter((u) => u.id !== me.id && !task?.assignments.some((a) => a.userId === u.id))
+   200→            .map((u) => ({ id: u.id, name: `${u.name} (${u.employeeCode})` }))
+   201→        )
+   202→      )
+   203→      .catch(() => {})
+   204→    setHandoffOpen(true)
+   205→  }
+   206→
+   207→  async function doHandoff() {
+   208→    if (!task || !handoffSel) return
+   209→    setHandoffBusy(true)
+   210→    try {
+   211→      const res = await api<{ task: TaskDetailDTO; handedTo: { id: string; name: string } }>(
+   212→        `/api/tasks/${task.id}/handoff`,
+   213→        { method: 'POST', body: JSON.stringify({ toUserId: handoffSel, note: handoffNote.trim() || undefined }) }
+   214→      )
+   215→      setTask(res.task)
+   216→      setHandoffOpen(false)
+   217→      onChanged()
+   218→      toast({
+   219→        title: 'Part handed off',
+   220→        description: `Your part of this task was transferred to ${res.handedTo.name} as Pending.`,
+   221→      })
+   222→    } catch (err) {
+   223→      toast({
+   224→        title: 'Could not hand off',
+   225→        description: err instanceof Error ? err.message : 'Please try again.',
+   226→      })
+   227→    } finally {
+   228→      setHandoffBusy(false)
+   229→    }
+   230→  }
+   231→
+   232→  const myAssignment = task?.assignments.find((a) => a.userId === me.id)
+   233→  const isOverdue =
+   234→    task && myAssignment && myAssignment.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
+   235→  const isCreator = task?.creator.id === me.id
+   236→  const isAborted = task?.status === 'ABORTED'
+   237→
+   238→  return (
+   239→    <Dialog open={Boolean(taskId)} onOpenChange={(o) => !o && onClose()}>
+   240→      <DialogContent className="flex max-h-[92vh] flex-col sm:max-w-3xl">
+   241→        {task === null && !error && (
+   242→          <div className="flex items-center justify-center py-16">
+   243→            <DialogTitle className="sr-only">Task details</DialogTitle>
+   244→            <DialogDescription className="sr-only">Loading task details</DialogDescription>
+   245→            <Loader2 className="h-8 w-8 animate-spin text-brand-600" />
+   246→          </div>
+   247→        )}
+   248→        {error && (
+   249→          <div className="py-10 text-center">
+   250→            <DialogTitle className="sr-only">Task details</DialogTitle>
+   251→            <p className="text-red-600">{error}</p>
+   252→            <Button variant="outline" size="sm" className="mt-3" onClick={onClose}>
+   253→              Close
+   254→            </Button>
+   255→          </div>
+   256→        )}
+   257→
+   258→        {task && (
+   259→          <>
+   260→            <DialogHeader>
+   261→              <div className="flex flex-wrap items-start justify-between gap-2 pr-6">
+   262→                <div>
+   263→                  <DialogTitle className="text-left leading-snug">{task.title}</DialogTitle>
+   264→                  <DialogDescription className="mt-1 text-left">
+   265→                    Created by <span className="font-medium text-slate-600">{task.creator.id === me.id ? 'you' : task.creator.name}</span> on {fmtDateTime(task.createdAt)}
+   266→                  </DialogDescription>
+   267→                </div>
+   268→                <div className="flex items-center gap-1.5">
+   269→                  {isAborted ? (
+   270→                    <AbortedBadge />
+   271→                  ) : (
+   272→                    <>
+   273→                      {isOverdue && <OverdueBadge />}
+   274→                      {myAssignment && <StatusBadge status={myAssignment.status} />}
+   275→                    </>
+   276→                  )}
+   277→                </div>
+   278→              </div>
+   279→            </DialogHeader>
+   280→
+   281→            <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1 [scrollbar-width:thin]">
+   282→              {isAborted && task.abortedAt && (
+   283→                <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3" role="status">
+   284→                  <Ban className="mt-0.5 h-4 w-4 shrink-0 text-red-600" aria-hidden="true" />
+   285→                  <div className="min-w-0 text-sm">
+   286→                    <p className="font-semibold text-red-800">
+   287→                      This task was aborted by {isCreator ? 'you' : task.creator.name} on{' '}
+   288→                      {fmtDateTime(task.abortedAt)}
+   289→                    </p>
+   290→                    {task.abortReason && <p className="mt-0.5 break-words text-red-700">Reason: {task.abortReason}</p>}
+   291→                  </div>
+   292→                </div>
+   293→              )}
+   294→              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+   295→                {/* Left column: details */}
+   296→                <div className="space-y-4">
+   297→                  {task.description && (
+   298→                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+   299→                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Description</p>
+   300→                      <p className="whitespace-pre-wrap text-sm text-slate-700">{task.description}</p>
+   301→                    </div>
+   302→                  )}
+   303→
+   304→                  <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600">
+   305→                    <span className="inline-flex items-center gap-1.5">
+   306→                      <CalendarClock className="h-4 w-4 text-brand-600" />
+   307→                      Due: <b className="font-semibold">{fmtDate(task.dueDate)}, {fmtTime(task.dueDate)} IST</b>
+   308→                    </span>
+   309→                    {isOverdue && (
+   310→                      <span className="inline-flex items-center gap-1.5 font-semibold text-red-600">
+   311→                        <AlarmClock className="h-4 w-4" />
+   312→                        Delayed by {delayLabel(task.dueDate)}
+   313→                      </span>
+   314→                    )}
+   315→                    <span className="inline-flex items-center gap-1.5">
+   316→                      <UserRound className="h-4 w-4 text-brand-600" />
+   317→                      Owner: <b className="font-semibold">{task.creator.id === me.id ? 'You' : task.creator.name}</b>
+   318→                    </span>
+   319→                  </div>
+   320→
+   321→                  {/* My status actions */}
+   322→                  {canAct && myAssignment && !isAborted && (
+   323→                    <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-3">
+   324→                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-700">Update my status</p>
+   325→                      <div className="flex flex-wrap gap-2">
+   326→                        {(['PENDING', 'IN_PROGRESS', 'COMPLETED'] as TaskStatus[]).map((s) => (
+   327→                          <button
+   328→                            key={s}
+   329→                            disabled={statusBusy || myAssignment.status === s}
+   330→                            onClick={() => setStatus(s)}
+   331→                            className={cn(
+   332→                              'rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-100',
+   333→                              myAssignment.status === s
+   334→                                ? s === 'COMPLETED'
+   335→                                  ? 'bg-brand-600 text-white shadow'
+   336→                                  : s === 'IN_PROGRESS'
+   337→                                    ? 'bg-violet-600 text-white shadow'
+   338→                                    : 'bg-amber-500 text-white shadow'
+   339→                                : 'border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700'
+   340→                            )}
+   341→                          >
+   342→                            {statusBusy && myAssignment.status !== s ? '…' : STATUS_LABEL[s]}
+   343→                          </button>
+   344→                        ))}
+   345→                        {statusBusy && <Loader2 className="h-4 w-4 animate-spin self-center text-brand-600" />}
+   346→                      </div>
+   347→                      {myAssignment.status !== 'COMPLETED' && (
+   348→                        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-brand-200/70 pt-2.5">
+   349→                          <p className="text-[11px] leading-snug text-brand-700/70">
+   350→                            Pass your part to a colleague for further completion.
+   351→                          </p>
+   352→                          <Button variant="outline" size="sm" className="shrink-0" disabled={statusBusy} onClick={openHandoff}>
+   353→                            <Forward className="mr-1.5 h-3.5 w-3.5" />
+   354→                            Hand off
+   355→                          </Button>
+   356→                        </div>
+   357→                      )}
+   358→                    </div>
+   359→                  )}
+   360→
+   361→                  {/* Status closed because the task was aborted */}
+   362→                  {canAct && myAssignment && isAborted && (
+   363→                    <div className="rounded-xl border border-red-200 bg-red-50/60 p-3">
+   364→                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">Status updates closed</p>
+   365→                      <p className="text-sm text-red-600/90">This task was aborted by the creator, so statuses are closed.</p>
+   366→                    </div>
+   367→                  )}
+   368→
+   369→                  {/* Assignees */}
+   370→                  <div>
+   371→                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+   372→                      Assigned to ({task.assignments.length})
+   373→                    </p>
+   374→                    <div className="space-y-2">
+   375→                      {task.assignments.map((a) => (
+   376→                        <div key={a.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-2.5">
+   377→                          <InitialAvatar name={a.user.name} className="h-8 w-8 text-[10px]" />
+   378→                          <div className="min-w-0 flex-1">
+   379→                            <p className="truncate text-sm font-medium text-slate-800">
+   380→                              {a.user.name}
+   381→                              {a.userId === me.id && <span className="text-brand-600"> (you)</span>}
+   382→                              <span className="ml-1 font-normal text-slate-400">· {a.user.employeeCode}</span>
+   383→                            </p>
+   384→                            <p className="truncate text-xs text-slate-500">
+   385→                              {a.user.designation}
+   386→                              {a.status === 'COMPLETED' && a.completedAt ? ` · closed ${fmtDateTime(a.completedAt)}` : ''}
+   387→                            </p>
+   388→                          </div>
+   389→                          <StatusBadge status={a.status} />
+   390→                        </div>
+   391→                      ))}
+   392→                    </div>
+   393→
+   394→                    {canAct && isCreator && !isAborted && addUsers.length > 0 && (
+   395→                      <div className="mt-2 flex items-center gap-2">
+   396→                        <select
+   397→                          value={addSel || ''}
+   398→                          onChange={(e) => setAddSel(e.target.value || null)}
+   399→                          className="h-9 flex-1 rounded-md border border-slate-200 bg-white px-2 text-sm"
+   400→                          aria-label="Add assignee"
+   401→                        >
+   402→                          <option value="">Add another employee…</option>
+   403→                          {addUsers.map((u) => (
+   404→                            <option key={u.id} value={u.id}>
+   405→                              {u.name}
+   406→                            </option>
+   407→                          ))}
+   408→                        </select>
+   409→                        <Button size="sm" variant="outline" disabled={!addSel || addingBusy} onClick={addAssignee}>
+   410→                          {addingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+   411→                        </Button>
+   412→                      </div>
+   413→                    )}
+   414→                  </div>
+   415→                </div>
+   416→
+   417→                {/* Right column: history timeline */}
+   418→                <div>
+   419→                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+   420→                    Complete history ({task.activities.length})
+   421→                  </p>
+   422→                  {task.activities.length === 0 ? (
+   423→                    <p className="text-sm text-slate-400">No activity yet.</p>
+   424→                  ) : (
+   425→                    <ol className="relative space-y-0 border-l border-slate-200 pl-4">
+   426→                      {task.activities.map((act) => {
+   427→                        const style = ACTION_STYLE[act.action] || ACTION_STYLE['TASK_UPDATED']!
+   428→                        const Icon = style.icon
+   429→                        return (
+   430→                          <li key={act.id} className="relative pb-4">
+   431→                            <span
+   432→                              className={cn(
+   433→                                'absolute -left-[30px] flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white',
+   434→                                style.cls
+   435→                              )}
+   436→                            >
+   437→                              <Icon className="h-3 w-3" />
+   438→                            </span>
+   439→                            <p className="text-sm text-slate-700">
+   440→                              <span className="font-semibold">{act.actorName}</span>{' '}
+   441→                              {act.action === 'COMMENT' ? (
+   442→                                <span className="mt-1 block rounded-lg bg-slate-50 px-2.5 py-1.5 text-sm text-slate-700">
+   443→                                  “{act.detail}”
+   444→                                </span>
+   445→                              ) : (
+   446→                                act.detail
+   447→                              )}
+   448→                            </p>
+   449→                            <p className="mt-0.5 text-[11px] text-slate-400">{fmtDateTime(act.createdAt)}</p>
+   450→                          </li>
+   451→                        )
+   452→                      })}
+   453→                    </ol>
+   454→                  )}
+   455→
+   456→                  {canAct && (
+   457→                    <div className="mt-2 border-t border-slate-100 pt-3">
+   458→                      <Label htmlFor="cmt" className="sr-only">Add comment</Label>
+   459→                      <div className="flex gap-2">
+   460→                        <Input
+   461→                          id="cmt"
+   462→                          placeholder="Add a comment to the history…"
+   463→                          value={comment}
+   464→                          onChange={(e) => setComment(e.target.value)}
+   465→                          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && postComment()}
+   466→                        />
+   467→                        <Button size="icon" aria-label="Post comment" onClick={postComment} disabled={commentBusy || !comment.trim()}>
+   468→                          {commentBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquarePlus className="h-4 w-4" />}
+   469→                        </Button>
+   470→                      </div>
+   471→                    </div>
+   472→                  )}
+   473→                </div>
+   474→              </div>
+   475→            </div>
+   476→
+   477→            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+   478→              <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
+   479→                <CheckCircle2 className="h-3.5 w-3.5" />
+   480→                {task.assignments.filter((a) => a.status === 'COMPLETED').length} of {task.assignments.length} employees completed
+   481→              </span>
+   482→              <div className="flex items-center gap-2">
+   483→                {isCreator && !isAborted && (
+   484→                  <Button
+   485→                    variant="outline"
+   486→                    size="sm"
+   487→                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+   488→                    onClick={() => setAbortOpen(true)}
+   489→                  >
+   490→                    <Ban className="mr-1.5 h-3.5 w-3.5" />
+   491→                    Abort Task
+   492→                  </Button>
+   493→                )}
+   494→                <Button variant="outline" size="sm" onClick={onClose}>
+   495→                  Close
+   496→                </Button>
+   497→              </div>
+   498→            </div>
+   499→          </>
+   500→        )}
+   501→      </DialogContent>
+   502→
+   503→      {/* Abort confirmation (creator only) */}
+   504→      {task && (
+   505→        <AlertDialog open={abortOpen} onOpenChange={setAbortOpen}>
+   506→          <AlertDialogContent>
+   507→            <AlertDialogHeader>
+   508→              <AlertDialogTitle>Abort this task?</AlertDialogTitle>
+   509→              <AlertDialogDescription>
+   510→                &ldquo;{task.title}&rdquo; will be marked as aborted. Assignees will no longer be able to
+   511→                update their status, and the task is excluded from active counts. This cannot be undone.
+   512→              </AlertDialogDescription>
+   513→            </AlertDialogHeader>
+   514→            <div className="space-y-1.5">
+   515→              <Label htmlFor="abort-reason">Reason (optional)</Label>
+   516→              <Textarea
+   517→                id="abort-reason"
+   518→                placeholder="e.g. Requirement changed / created by mistake"
+   519→                value={abortReason}
+   520→                onChange={(e) => setAbortReason(e.target.value)}
+   521→                rows={3}
+   522→                maxLength={500}
+   523→              />
+   524→            </div>
+   525→            <AlertDialogFooter>
+   526→              <AlertDialogCancel disabled={abortBusy}>Cancel</AlertDialogCancel>
+   527→              <AlertDialogAction
+   528→                className="bg-red-600 text-white hover:bg-red-700"
+   529→                disabled={abortBusy}
+   530→                onClick={(e) => {
+   531→                  e.preventDefault()
+   532→                  abortTask()
+   533→                }}
+   534→              >
+   535→                {abortBusy ? (
+   536→                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+   537→                ) : (
+   538→                  <Ban className="mr-1.5 h-4 w-4" />
+   539→                )}
+   540→                {abortBusy ? 'Aborting…' : 'Abort Task'}
+   541→              </AlertDialogAction>
+   542→            </AlertDialogFooter>
+   543→          </AlertDialogContent>
+   544→        </AlertDialog>
+   545→      )}
+   546→
+   547→      {/* Hand off confirmation (assignee with an open part) */}
+   548→      {task && (
+   549→        <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
+   550→          <AlertDialogContent>
+   551→            <AlertDialogHeader>
+   552→              <AlertDialogTitle>Hand off your part?</AlertDialogTitle>
+   553→              <AlertDialogDescription>
+   554→                Your part of &ldquo;{task.title}&rdquo; will be transferred to the selected colleague as
+   555→                Pending. It will move out of your task list, and the handoff is recorded in the task
+   556→                history. This cannot be undone.
+   557→              </AlertDialogDescription>
+   558→            </AlertDialogHeader>
+   559→            <div className="space-y-1.5">
+   560→              <Label htmlFor="handoff-user">Hand off to</Label>
+   561→              <select
+   562→                id="handoff-user"
+   563→                value={handoffSel || ''}
+   564→                onChange={(e) => setHandoffSel(e.target.value || null)}
+   565→                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
+   566→              >
+   567→                <option value="">Choose a colleague…</option>
+   568→                {handoffUsers.map((u) => (
+   569→                  <option key={u.id} value={u.id}>
+   570→                    {u.name}
+   571→                  </option>
+   572→                ))}
+   573→              </select>
+   574→            </div>
+   575→            <div className="space-y-1.5">
+   576→              <Label htmlFor="handoff-note">Note for them (optional)</Label>
+   577→              <Textarea
+   578→                id="handoff-note"
+   579→                placeholder="e.g. Draft prepared — please review and submit"
+   580→                value={handoffNote}
+   581→                onChange={(e) => setHandoffNote(e.target.value)}
+   582→                rows={3}
+   583→                maxLength={300}
+   584→              />
+   585→            </div>
+   586→            <AlertDialogFooter>
+   587→              <AlertDialogCancel disabled={handoffBusy}>Cancel</AlertDialogCancel>
+   588→              <AlertDialogAction
+   589→                className="bg-brand-600 text-white hover:bg-brand-700"
+   590→                disabled={handoffBusy || !handoffSel}
+   591→                onClick={(e) => {
+   592→                  e.preventDefault()
+   593→                  doHandoff()
+   594→                }}
+   595→              >
+   596→                {handoffBusy ? (
+   597→                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+   598→                ) : (
+   599→                  <Forward className="mr-1.5 h-4 w-4" />
+   600→                )}
+   601→                {handoffBusy ? 'Handing off…' : 'Hand off'}
+   602→              </AlertDialogAction>
+   603→            </AlertDialogFooter>
+   604→          </AlertDialogContent>
+   605→        </AlertDialog>
+   606→      )}
+   607→    </Dialog>
+   608→  )
+   609→}
+   610→

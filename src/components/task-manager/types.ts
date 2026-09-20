@@ -43,6 +43,14 @@ export interface TaskDTO {
   createdAt: string
   creator: { id: string; name: string; employeeCode: string; designation: string }
   assignments: TaskAssignmentDTO[]
+  // Recurring series (optional — absent on non-recurring tasks)
+  recurring?: boolean
+  recurFreq?: string | null
+  recurInterval?: number | null
+  recurEndType?: string | null
+  recurEndDate?: string | null
+  recurCount?: number | null
+  recurOccurrence?: number
 }
 
 export interface ActivityDTO {

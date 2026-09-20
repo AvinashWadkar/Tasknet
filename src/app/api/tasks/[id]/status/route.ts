@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { maybeSpawnNextOccurrence } from '@/lib/recurring-server'
 
 const VALID = ['PENDING', 'IN_PROGRESS', 'COMPLETED']
 
@@ -61,6 +62,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await db.taskActivity.create({
       data: { taskId: task.id, actorId: session.id, actorName: actor, action, detail },
     })
+
+    // Recurring series: when the whole task is now complete, auto-create the
+    // next occurrence (no-op for non-recurring tasks; guarded & idempotent)
+    if (status === 'COMPLETED') {
+      try {
+        await maybeSpawnNextOccurrence(task.id)
+      } catch (recErr) {
+        console.error('recurrence spawn error', recErr)
+      }
+    }
 
     const updated = await db.task.findUnique({
       where: { id: task.id },

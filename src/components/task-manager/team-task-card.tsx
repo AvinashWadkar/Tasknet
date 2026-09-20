@@ -2,9 +2,10 @@
 
 import { cn } from '@/lib/utils'
 import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
+import { recurrenceLabel } from '@/lib/recurring'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, viewerStatus } from './shared'
 import { STATUS_LABEL, type TaskDTO } from './types'
-import { CalendarClock, UserRound, AlarmClock, CheckCircle2 } from 'lucide-react'
+import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat } from 'lucide-react'
 
 /**
  * Card for a TEAM task on a manager's home page. The viewer has no
@@ -84,6 +85,12 @@ export function TeamTaskCard({
           <span className="inline-flex items-center gap-1 font-medium text-brand-700">
             <CheckCircle2 className="h-3.5 w-3.5" />
             All {total} completed
+          </span>
+        )}
+        {task.recurring && recurrenceLabel(task) && (
+          <span className="inline-flex items-center gap-1 font-medium text-brand-600">
+            <Repeat className="h-3.5 w-3.5" aria-hidden="true" />
+            {recurrenceLabel(task)}
           </span>
         )}
         <span className="inline-flex items-center gap-1">

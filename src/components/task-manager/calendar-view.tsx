@@ -136,9 +136,9 @@ export function CalendarView({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         {/* Month grid — MS Teams style */}
-        <Card className="border-slate-200/80 shadow-sm lg:col-span-3">
+        <Card className="min-w-0 border-slate-200/80 shadow-sm lg:col-span-3">
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold text-slate-900">{monthLabel(monthCursor)}</h3>
@@ -218,7 +218,7 @@ export function CalendarView({
         </Card>
 
         {/* Selected day agenda */}
-        <Card className="border-slate-200/80 shadow-sm lg:col-span-2">
+        <Card className="min-w-0 border-slate-200/80 shadow-sm lg:col-span-2">
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
