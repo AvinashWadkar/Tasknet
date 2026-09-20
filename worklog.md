@@ -185,3 +185,20 @@ Work Log:
 
 Stage Summary:
 - Greeting accent is now a subtle glass icon badge that adapts to time of day (Sunrise/SunMedium/MoonStar) instead of a raw emoji — consistent with the site's Lucide icon language and the navy brand palette.
+
+---
+Task ID: 11
+Agent: Z.ai Code (main)
+Task: "As an employee if any task gets assigned to me and I work on that task for my part then for further completion I should be able to send that task to someone."
+
+Work Log:
+- New endpoint POST /api/tasks/[id]/handoff (assignee-only): body { toUserId, note? (≤300 chars) }. Validates task ACTIVE (aborted → 400 "handoff is closed"), session user has an assignment with status != COMPLETED (403 non-assignee / 400 already-completed), target exists+active, target != self (400), target not already an assignee (400). In a db.$transaction: deletes my TaskAssignment, creates a fresh PENDING assignment for the target, and writes TASK_HANDOFF activity ("Handed off their part to {name} ({code}) for further completion — \"note\""). Returns refreshed task detail incl. assignments + activities + handedTo for the toast.
+- task-detail-dialog.tsx: new "Hand off" row inside the "Update my status" card (visible for my open part on active tasks: hint "Pass your part to a colleague for further completion." + outline button with Forward icon). Opens an AlertDialog: colleague <select> populated from /api/users (excludes self + existing assignees; confirm disabled until chosen), optional note Textarea, brand-styled confirm with busy spinner. On success: task state refreshed (status card disappears for the hander, ASSIGNED TO list updates), onChanged() refreshes lists, toast "Part handed off — transferred to {name} as Pending"; errors surface via toast. History timeline gained ACTION_STYLE TASK_HANDOFF (cyan Forward icon).
+- Fixed a pre-existing mobile bug surfaced during verification: task-detail grid used an implicit auto track (no grid-cols class) whose max-content sizing (meta row "Due … + Owner …" on one line) stretched the dialog content to ~352px inside a 316px scroll area → right-edge clipping at 390px. Fixed with explicit grid-cols-1 (minmax(0,1fr)); desktop md:grid-cols-2 unchanged.
+- Verified via curl: 5 guards (self → 400; existing assignee → 400; non-assignee → 403; completed part → 400; aborted task → 400); real handoff Rahul(EMP002)→Neha(EMP006) on "Prepare daily MIS report" with note → assignments become EMP001 COMPLETED + EMP006 PENDING, TASK_HANDOFF activity on top, task gone from Rahul's list, present as PENDING in Neha's; post-handoff access check — Rahul (no longer participant/manager) gets 403 on task detail.
+- Verified via Agent Browser (desktop 1280 + mobile 390): Rahul → task detail → Hand off → select "Suresh Kumar (EMP005)" (picker correctly excluded self + Avinash) + note → confirm → toast + ASSIGNED TO updated + cyan handoff history entry; Suresh's home now ranks the task in AI Priority, his detail shows "(you) Pending", full handoff history, own Hand off row; 390px dialog renders with zero clipping after the grid fix (scrollWidth 390, sc 316=client); zero console/page errors; lint clean; dev.log clean.
+
+Stage Summary:
+- Shipped: an assignee can hand off their open part of any active task to a colleague for further completion — a true transfer (my assignment removed, target added as Pending) recorded in the shared history with an optional note; creators keep full control (add assignees/abort) and other assignees are untouched. Handed-off work flows into the receiver's Home/Today/AI plan automatically.
+- Bonus fix: eliminated right-edge clipping of the task-detail dialog on mobile (390px) caused by an implicit auto grid track.
+- Demo state: "Update SOP documentation" (creator Suresh) now assigned to Suresh (Pending, after receiving handoff from Rahul) + Avinash (In Progress); "Prepare daily MIS report" (creator Priya) assignees Avinash (Completed) + Neha (Pending, received handoff from Rahul).

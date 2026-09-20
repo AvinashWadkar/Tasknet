@@ -43,6 +43,7 @@ import {
   History,
   Ban,
   AlarmClock,
+  Forward,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -53,6 +54,7 @@ const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
   COMMENT: { icon: StickyNote, cls: 'bg-slate-100 text-slate-600' },
   TASK_UPDATED: { icon: History, cls: 'bg-sky-100 text-sky-700' },
   TASK_ABORTED: { icon: Ban, cls: 'bg-red-100 text-red-700' },
+  TASK_HANDOFF: { icon: Forward, cls: 'bg-cyan-100 text-cyan-700' },
 }
 
 export function TaskDetailDialog({
@@ -78,6 +80,11 @@ export function TaskDetailDialog({
   const [abortOpen, setAbortOpen] = useState(false)
   const [abortReason, setAbortReason] = useState('')
   const [abortBusy, setAbortBusy] = useState(false)
+  const [handoffOpen, setHandoffOpen] = useState(false)
+  const [handoffUsers, setHandoffUsers] = useState<{ id: string; name: string }[]>([])
+  const [handoffSel, setHandoffSel] = useState<string | null>(null)
+  const [handoffNote, setHandoffNote] = useState('')
+  const [handoffBusy, setHandoffBusy] = useState(false)
   const { toast } = useToast()
 
   const load = useCallback(async () => {
@@ -181,6 +188,47 @@ export function TaskDetailDialog({
     }
   }
 
+  function openHandoff() {
+    setHandoffSel(null)
+    setHandoffNote('')
+    setHandoffUsers([])
+    api<{ users: { id: string; name: string; employeeCode: string }[] }>('/api/users')
+      .then((r) =>
+        setHandoffUsers(
+          r.users
+            .filter((u) => u.id !== me.id && !task?.assignments.some((a) => a.userId === u.id))
+            .map((u) => ({ id: u.id, name: `${u.name} (${u.employeeCode})` }))
+        )
+      )
+      .catch(() => {})
+    setHandoffOpen(true)
+  }
+
+  async function doHandoff() {
+    if (!task || !handoffSel) return
+    setHandoffBusy(true)
+    try {
+      const res = await api<{ task: TaskDetailDTO; handedTo: { id: string; name: string } }>(
+        `/api/tasks/${task.id}/handoff`,
+        { method: 'POST', body: JSON.stringify({ toUserId: handoffSel, note: handoffNote.trim() || undefined }) }
+      )
+      setTask(res.task)
+      setHandoffOpen(false)
+      onChanged()
+      toast({
+        title: 'Part handed off',
+        description: `Your part of this task was transferred to ${res.handedTo.name} as Pending.`,
+      })
+    } catch (err) {
+      toast({
+        title: 'Could not hand off',
+        description: err instanceof Error ? err.message : 'Please try again.',
+      })
+    } finally {
+      setHandoffBusy(false)
+    }
+  }
+
   const myAssignment = task?.assignments.find((a) => a.userId === me.id)
   const isOverdue =
     task && myAssignment && myAssignment.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
@@ -243,7 +291,7 @@ export function TaskDetailDialog({
                   </div>
                 </div>
               )}
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 {/* Left column: details */}
                 <div className="space-y-4">
                   {task.description && (
@@ -296,6 +344,17 @@ export function TaskDetailDialog({
                         ))}
                         {statusBusy && <Loader2 className="h-4 w-4 animate-spin self-center text-brand-600" />}
                       </div>
+                      {myAssignment.status !== 'COMPLETED' && (
+                        <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-brand-200/70 pt-2.5">
+                          <p className="text-[11px] leading-snug text-brand-700/70">
+                            Pass your part to a colleague for further completion.
+                          </p>
+                          <Button variant="outline" size="sm" className="shrink-0" disabled={statusBusy} onClick={openHandoff}>
+                            <Forward className="mr-1.5 h-3.5 w-3.5" />
+                            Hand off
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -479,6 +538,67 @@ export function TaskDetailDialog({
                   <Ban className="mr-1.5 h-4 w-4" />
                 )}
                 {abortBusy ? 'Aborting…' : 'Abort Task'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Hand off confirmation (assignee with an open part) */}
+      {task && (
+        <AlertDialog open={handoffOpen} onOpenChange={setHandoffOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Hand off your part?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Your part of &ldquo;{task.title}&rdquo; will be transferred to the selected colleague as
+                Pending. It will move out of your task list, and the handoff is recorded in the task
+                history. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <Label htmlFor="handoff-user">Hand off to</Label>
+              <select
+                id="handoff-user"
+                value={handoffSel || ''}
+                onChange={(e) => setHandoffSel(e.target.value || null)}
+                className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
+              >
+                <option value="">Choose a colleague…</option>
+                {handoffUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="handoff-note">Note for them (optional)</Label>
+              <Textarea
+                id="handoff-note"
+                placeholder="e.g. Draft prepared — please review and submit"
+                value={handoffNote}
+                onChange={(e) => setHandoffNote(e.target.value)}
+                rows={3}
+                maxLength={300}
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={handoffBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-brand-600 text-white hover:bg-brand-700"
+                disabled={handoffBusy || !handoffSel}
+                onClick={(e) => {
+                  e.preventDefault()
+                  doHandoff()
+                }}
+              >
+                {handoffBusy ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Forward className="mr-1.5 h-4 w-4" />
+                )}
+                {handoffBusy ? 'Handing off…' : 'Hand off'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
