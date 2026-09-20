@@ -5,10 +5,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
+import { TeamTaskCard } from './team-task-card'
 import { AiPriorityPanel } from './ai-priority-panel'
 import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
-import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar } from 'lucide-react'
+import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound } from 'lucide-react'
 import { initialsOf } from './shared'
 import { Button } from '@/components/ui/button'
 
@@ -26,7 +27,10 @@ export function HomeView({
   onQuickStatus: (task: TaskDTO, status: 'IN_PROGRESS' | 'COMPLETED') => void
 }) {
   const [tasks, setTasks] = useState<TaskDTO[] | null>(null)
+  const [teamTasks, setTeamTasks] = useState<TaskDTO[] | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Managers (and ADMIN) get the extra "My Team Tasks for Today" list
+  const showTeamList = me.isManager === true || me.role === 'ADMIN'
   const [greeting, setGreeting] = useState('Hello')
   const [today, setToday] = useState(istToday())
   const [clock, setClock] = useState<string | null>(null)
@@ -52,6 +56,21 @@ export function HomeView({
       alive = false
     }
   }, [refreshKey])
+
+  // Team tasks (downline-visible, excluding my own) — only fetched for managers
+  useEffect(() => {
+    if (!showTeamList) {
+      setTeamTasks(null)
+      return
+    }
+    let alive = true
+    api<{ tasks: TaskDTO[] }>(`/api/team/tasks`)
+      .then((r) => alive && setTeamTasks(r.tasks))
+      .catch(() => alive && setTeamTasks([]))
+    return () => {
+      alive = false
+    }
+  }, [refreshKey, showTeamList])
 
   const { todayTasks, upcoming, stats } = useMemo(() => {
     const all = tasks || []
@@ -126,6 +145,29 @@ export function HomeView({
     return { total, closed, pct: total ? Math.round((closed / total) * 100) : 0 }
   }, [todayTasks, me.id])
 
+  // Team tasks for today: due today + still-open overdue work rolled forward;
+  // aborted tasks stay listed only on their due day (mirrors My Tasks rules)
+  const teamToday = useMemo(() => {
+    const all = teamTasks || []
+    const istDayOf = (iso: string) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(iso))
+    const list = all.filter((t) => {
+      const d = istDayOf(t.dueDate)
+      if (t.status === 'ABORTED') return d === today
+      if (d === today) return true
+      if (d < today) return t.assignments.some((a) => a.status !== 'COMPLETED')
+      return false
+    })
+    const rankOf = (t: TaskDTO) => (t.status === 'ABORTED' ? 2 : istDayOf(t.dueDate) < today ? 0 : 1)
+    list.sort((a, b) => {
+      const ra = rankOf(a)
+      const rb = rankOf(b)
+      if (ra !== rb) return ra - rb
+      return a.dueDate.localeCompare(b.dueDate) // most delayed first
+    })
+    return list
+  }, [teamTasks, today])
+
   async function quickStatus(task: TaskDTO, status: 'IN_PROGRESS' | 'COMPLETED') {
     setBusyId(task.id)
     try {
@@ -193,6 +235,93 @@ export function HomeView({
       alert: false,
     },
   ]
+
+  const myCardsCls = showTeamList ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 lg:grid-cols-2'
+
+  const myTasksSection = (
+    <section className="min-w-0">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <ListTodo className="h-5 w-5 text-brand-600" /> My Tasks for Today
+        </h2>
+        <span className="text-xs text-slate-400">{fmtDate(new Date())}</span>
+      </div>
+
+      {tasks === null ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : todayTasks.length === 0 ? (
+        <Card className="border-dashed border-slate-300 bg-white/60">
+          <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <span className="text-4xl">🎉</span>
+            <p className="font-medium text-slate-700">All caught up!</p>
+            <p className="text-sm text-slate-500">No pending or overdue tasks for today — enjoy the clear runway, or create a task for your team.</p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => onNewTask(today)}>
+              <Plus className="mr-2 h-4 w-4" /> Create Task
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className={myCardsCls}>
+          {todayTasks.map((t) => (
+            <TaskCard
+              key={t.id}
+              task={t}
+              me={me}
+              busy={busyId === t.id}
+              onOpen={() => onOpenTask(t.id)}
+              onQuickStatus={(s) => quickStatus(t, s)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+
+  const teamTasksSection = (
+    <section className="min-w-0" aria-label="My team tasks for today">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+          <UsersRound className="h-5 w-5 text-brand-600" /> My Team Tasks for Today
+        </h2>
+        {teamTasks !== null && (
+          <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
+            {teamToday.length} {teamToday.length === 1 ? 'task' : 'tasks'}
+          </span>
+        )}
+      </div>
+
+      {teamTasks === null ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : teamToday.length === 0 ? (
+        <Card className="border-dashed border-slate-300 bg-white/60">
+          <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+            <span
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-600"
+              aria-hidden="true"
+            >
+              <UsersRound className="h-6 w-6" />
+            </span>
+            <p className="font-medium text-slate-700">Team is all caught up!</p>
+            <p className="text-sm text-slate-500">No pending or overdue tasks for your team members today.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-3">
+          {teamToday.map((t) => (
+            <TeamTaskCard key={t.id} task={t} onOpen={() => onOpenTask(t.id)} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
 
   return (
     <div className="space-y-6">
@@ -314,47 +443,15 @@ export function HomeView({
       {/* AI priority plan */}
       <AiPriorityPanel me={me} refreshKey={refreshKey} onOpenTask={onOpenTask} />
 
-      {/* Today's tasks */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-            <ListTodo className="h-5 w-5 text-brand-600" /> My Tasks for Today
-          </h2>
-          <span className="text-xs text-slate-400">{fmtDate(new Date())}</span>
+      {/* Today's tasks — managers get their team's list side-by-side */}
+      {showTeamList ? (
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+          {myTasksSection}
+          {teamTasksSection}
         </div>
-
-        {tasks === null ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-xl" />
-            ))}
-          </div>
-        ) : todayTasks.length === 0 ? (
-          <Card className="border-dashed border-slate-300 bg-white/60">
-            <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-              <span className="text-4xl">🎉</span>
-              <p className="font-medium text-slate-700">All caught up!</p>
-              <p className="text-sm text-slate-500">No pending or overdue tasks for today — enjoy the clear runway, or create a task for your team.</p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => onNewTask(today)}>
-                <Plus className="mr-2 h-4 w-4" /> Create Task
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {todayTasks.map((t) => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                me={me}
-                busy={busyId === t.id}
-                onOpen={() => onOpenTask(t.id)}
-                onQuickStatus={(s) => quickStatus(t, s)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      ) : (
+        myTasksSection
+      )}
 
       {/* Upcoming */}
       {upcoming.length > 0 && (
