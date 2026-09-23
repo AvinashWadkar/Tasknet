@@ -32,7 +32,7 @@ export function SmartPriorityPanel({
   // Initial + parent-triggered load (silent refresh); Refresh sets its own loading state
   useEffect(() => {
     let alive = true
-    api<{ source: 'ai' | 'fallback'; plan: PriorityItem[] }>('/api/tasks/prioritize', {
+    api<{ source: 'ai' | 'fallback'; plan: PriorityItem[]; aiError?: string }>('/api/tasks/prioritize', {
       method: 'POST',
       body: JSON.stringify({ refresh: reloadKey > 0 }),
     })
@@ -40,7 +40,7 @@ export function SmartPriorityPanel({
         if (!alive) return
         setPlan(r.plan)
         setSource(r.source)
-        setError(null)
+        setError(r.source === 'fallback' && r.aiError ? r.aiError : null)
       })
       .catch((e) => {
         if (!alive) return

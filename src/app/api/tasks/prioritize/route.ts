@@ -33,7 +33,7 @@ interface WorkItem extends PlanItem {
   dueDay: string
 }
 
-const cache = new Map<string, { ts: number; source: 'ai' | 'fallback'; plan: PlanItem[] }>()
+const cache = new Map<string, { ts: number; source: 'ai' | 'fallback'; plan: PlanItem[]; aiError?: string }>()
 
 function strip(t: WorkItem): PlanItem {
   return {
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
   if (!refresh) {
     const hit = cache.get(session.id)
     if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
-      return NextResponse.json({ source: hit.source, plan: hit.plan, cached: true })
+      return NextResponse.json({ source: hit.source, plan: hit.plan, cached: true, aiError: hit.aiError })
     }
   }
 
@@ -159,6 +159,7 @@ export async function POST(req: Request) {
 
   let source: 'ai' | 'fallback' = 'fallback'
   let ordered: PlanItem[] = []
+  let aiError: string | undefined
 
   try {
     const baseUrl = (process.env.ZAI_BASE_URL || '').replace(/\/+$/, '')
@@ -191,45 +192,51 @@ export async function POST(req: Request) {
       }),
       signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     })
-    if (!res.ok) throw new Error(`AI request failed with status ${res.status}`)
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '')
+      throw new Error(`Z.ai request failed (${res.status}): ${bodyText.slice(0, 200)}`)
+    }
 
     const completion = (await res.json()) as { choices?: { message?: { content?: string } }[] }
     const raw = completion?.choices?.[0]?.message?.content || ''
+    if (!raw) throw new Error('Z.ai returned an empty response')
     const cleaned = raw.replace(/```json|```/g, '').trim()
     const start = cleaned.indexOf('{')
     const end = cleaned.lastIndexOf('}')
-    if (start !== -1 && end > start) {
-      const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
-        order?: { id?: string; reason?: string }[]
-      }
-      if (Array.isArray(parsed.order)) {
-        const byId = new Map(items.map((t) => [t.id, t]))
-        const seen = new Set<string>()
-        const out: WorkItem[] = []
-        for (const o of parsed.order) {
-          const id = String(o?.id || '')
-          const t = byId.get(id)
-          if (!t || seen.has(id)) continue
-          seen.add(id)
-          out.push({ ...t, reason: String(o?.reason || fallbackReason({ ...t, today })).slice(0, 140) })
-        }
-        // Any task the AI skipped is appended in deadline order
-        const rest = items
-          .filter((t) => !seen.has(t.id))
-          .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-          .map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) }))
-        ordered = [...out, ...rest].map(strip)
-        if (out.length > 0) source = 'ai'
-      }
+    if (start === -1 || end <= start) throw new Error('Z.ai response was not JSON')
+    const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
+      order?: { id?: string; reason?: string }[]
     }
+    if (!Array.isArray(parsed.order) || parsed.order.length === 0) {
+      throw new Error(`Z.ai response had no "order" array: ${raw.slice(0, 200)}`)
+    }
+    const byId = new Map(items.map((t) => [t.id, t]))
+    const seen = new Set<string>()
+    const out: WorkItem[] = []
+    for (const o of parsed.order) {
+      const id = String(o?.id || '')
+      const t = byId.get(id)
+      if (!t || seen.has(id)) continue
+      seen.add(id)
+      out.push({ ...t, reason: String(o?.reason || fallbackReason({ ...t, today })).slice(0, 140) })
+    }
+    // Any task the AI skipped is appended in deadline order
+    const rest = items
+      .filter((t) => !seen.has(t.id))
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+      .map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) }))
+    ordered = [...out, ...rest].map(strip)
+    if (out.length === 0) throw new Error(`Z.ai returned no order matching the open task ids: ${raw.slice(0, 200)}`)
+    source = 'ai'
   } catch (e) {
-    console.warn('[prioritize] AI ordering unavailable, using deadline fallback:', e instanceof Error ? e.message : e)
+    aiError = e instanceof Error ? e.message : String(e)
+    console.warn('[prioritize] AI ordering unavailable, using deadline fallback:', aiError)
   }
 
   if (ordered.length === 0) {
     ordered = fallbackOrder(items.map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) })))
   }
 
-  cache.set(session.id, { ts: Date.now(), source, plan: ordered })
-  return NextResponse.json({ source, plan: ordered })
+  cache.set(session.id, { ts: Date.now(), source, plan: ordered, aiError })
+  return NextResponse.json({ source, plan: ordered, aiError })
 }
