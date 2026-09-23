@@ -6,6 +6,7 @@ import { delayLabel, fmtDate, fmtTime, istToday } from '@/lib/dates'
 /**
  * POST /api/tasks/prioritize
  * AI prioritizes the signed-in user's open tasks ("every assigned task needs to be completed").
+ * Configured via ZAI_BASE_URL and ZAI_API_KEY environment variables (baseUrl must include /v1).
  * Falls back to a deadline-based heuristic order if the AI call fails or times out.
  * Result is cached in memory for 60s per user; body { refresh: true } bypasses the cache.
  */
@@ -52,7 +53,7 @@ function strip(t: WorkItem): PlanItem {
 function fallbackReason(t: {
   overdue: boolean
   delayed: string
-  dueDate: Date
+  dueDate: string | Date
   dueDay: string
   today: string
   myStatus: PlanStatus
@@ -65,7 +66,7 @@ function fallbackReason(t: {
 
 function fallbackRank(t: WorkItem): number {
   if (t.overdue) return 0
-  if (t.dueDay === t.today) return 1
+  if (t.dueDay === istToday()) return 1
   if (t.myStatus === 'IN_PROGRESS') return 2
   return 3
 }
@@ -160,8 +161,9 @@ export async function POST(req: Request) {
   let ordered: PlanItem[] = []
 
   try {
-    const { default: ZAI } = await import('z-ai-web-dev-sdk')
-    const zai = await ZAI.create()
+    const baseUrl = (process.env.ZAI_BASE_URL || '').replace(/\/+$/, '')
+    const apiKey = process.env.ZAI_API_KEY || ''
+    if (!baseUrl || !apiKey) throw new Error('ZAI_BASE_URL / ZAI_API_KEY not configured')
     const sys =
       "You are a strict work-prioritization assistant inside a task manager. The goal: EVERY assigned task must be completed. " +
       "Rank the user's open tasks by execution priority. Rules: overdue tasks first (most delayed / most critical first), " +
@@ -173,17 +175,26 @@ export async function POST(req: Request) {
       'including EVERY task id exactly once, most important first.'
     const userContent = `Today is ${today} (IST). Prioritize these ${llmPayload.length} open tasks:\n${JSON.stringify(llmPayload)}`
 
-    const completion = (await Promise.race([
-      zai.chat.completions.create({
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-Z-AI-From': 'Z',
+      },
+      body: JSON.stringify({
+        model: process.env.ZAI_MODEL || 'glm-5.3-flash',
         messages: [
           { role: 'assistant', content: sys },
           { role: 'user', content: userContent },
         ],
         thinking: { type: 'disabled' },
       }),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('AI timeout')), AI_TIMEOUT_MS)),
-    ])) as { choices?: { message?: { content?: string } }[] }
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    })
+    if (!res.ok) throw new Error(`AI request failed with status ${res.status}`)
 
+    const completion = (await res.json()) as { choices?: { message?: { content?: string } }[] }
     const raw = completion?.choices?.[0]?.message?.content || ''
     const cleaned = raw.replace(/```json|```/g, '').trim()
     const start = cleaned.indexOf('{')
@@ -212,8 +223,8 @@ export async function POST(req: Request) {
         if (out.length > 0) source = 'ai'
       }
     }
-  } catch {
-    /* AI unavailable — heuristic below */
+  } catch (e) {
+    console.warn('[prioritize] AI ordering unavailable, using deadline fallback:', e instanceof Error ? e.message : e)
   }
 
   if (ordered.length === 0) {

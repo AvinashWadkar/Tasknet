@@ -66,7 +66,7 @@ export function SmartPriorityPanel({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
             <Sparkles className="h-5 w-5 text-brand-600" />
-            Smart Priority
+Task Priority
             <span className="text-sm font-normal text-slate-400">— what to work on first</span>
           </h2>
           <Button
