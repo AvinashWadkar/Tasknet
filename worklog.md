@@ -1,0 +1,366 @@
+---
+Task ID: 1 (single-agent, full build)
+Agent: Z.ai Code (main)
+Task: Build "Digitide TaskFlow" — a full-stack Task Manager with admin-only user creation, first-login mandatory password change, greeting home page, today's tasks, MS Teams-style calendar, multi-employee task assignment, shared task history, manager hierarchy views (downline-only), and admin user management.
+
+Work Log:
+- Replaced prisma/schema.prisma with User (org-hierarchy via managerName/managerEmail/managerId), Task, TaskAssignment (per-employee status), TaskActivity (audit trail); ran db:push.
+- Installed bcryptjs + jose; created src/lib/auth.ts (JWT httpOnly cookie sessions, password policy), src/lib/dates.ts (IST helpers, month grid, greetings), src/lib/hierarchy.ts (descendant computation, task visibility rules).
+- API routes: /api/auth/{login,logout,me,change-password}; /api/users (GET directory, POST admin-only create with auto manager linking by email + retroactive linking); /api/tasks (GET scoped list today/date/range/all with assigned/created filters; POST create with multi-assignee); /api/tasks/[id] (GET detail with full history + access check incl. manager read-only; PATCH creator edit/add assignees); /api/tasks/[id]/status (assignee updates own status, reopen detection); /api/tasks/[id]/comment; /api/team (hierarchy tree + per-employee stats, admin=org scope, manager=downline scope).
+- Frontend (single route src/app/page.tsx → components/task-manager/*): login-view, force-password-modal (non-dismissable, policy-gated), app shell (sticky header, nav tabs, account menu, sticky footer), home-view (greeting hero + stat cards + today's tasks with quick actions + upcoming), calendar-view (Teams-style month grid with status dots, day agenda, filters), new-task-dialog (multi-select assignees with search/chips), task-detail-dialog (assignee statuses, complete history timeline, comments, add-assignee), team-view (org tree + employee-wise expandable stats table), admin-panel (7-field create form + users table).
+- Seeded prisma/seed.ts: ADMIN (Admin@123) + demo org EMP001 Avinash/EMP002 Rahul (Exec, L1 Priya) / EMP003 Priya (TL, L1 Suresh) / EMP004 Amit (AM, L1 Suresh) / EMP005 Suresh (DM) + 5 tasks with history (2 due today IST, 1 overdue, 2 upcoming).
+- Fixed 3 bugs found during verification: Prisma orderBy on non-existent TaskAssignment.createdAt (3 routes); isManager missing on login response → Team View tab hidden for managers (now refetch /api/auth/me after login); admin "My Tasks" tab rendered empty view (hidden for ADMIN).
+- Fixed a11y: DialogTitle missing in task-detail loading/error states.
+- Verified via curl: hierarchy scoping (DM sees 4 downline, TL sees 2, AM sees 1), 403 for unrelated users, duplicate employee-code/email rejection, non-admin creation blocked, password policy enforcement, reopen flow.
+- Verified via Agent Browser: login → mandatory password modal → set password → greeting home → task detail status/comment → calendar dots + day agenda → new task with 3 assignees → manager team view tree + employee drill-down + read-only downline task history → admin user creation (Kavita/EMP007 auto-linked to Amit) → mobile responsive (390px) → sticky footer.
+
+Stage Summary:
+- App: "Digitide TaskFlow" complete at / route; lint clean; dev server healthy.
+- Credentials: ADMIN / Admin@123 (admin panel); demo employees EMP001..EMP006 with default Digitide@123 (first-login flow triggers). Avinash (EMP001) and Suresh (EMP005) had passwords set to Avinash@2026 / Suresh@2026 during browser testing.
+- Key decisions: hierarchy auto-links by L1 Manager Email (retroactive when manager created later); task visibility = creator ∪ assignees; managers get read-only view of downline tasks; all date math in IST (Asia/Calcutta).
+
+---
+Task ID: 2
+Agent: Z.ai Code (main)
+Task: New requirement — admin should be able to SEE the password of every user (TaskFlow v1 stored only bcrypt hashes).
+
+Work Log:
+- Schema: added `User.passwordPlain` (nullable plaintext mirror) in prisma/schema.prisma; ran `db:push` (regenerated Prisma Client).
+- Synced the mirror at every password-write path: prisma/seed.ts (Admin@123 / Digitide@123), POST /api/users create (Digitide@123), POST /api/auth/change-password (user's own new password), POST /api/auth/login (lazy backfill from the just-verified password as a safety net for any null row).
+- New scripts/backfill-plain.ts: bcrypt-verified backfill for legacy rows — a candidate password is stored only after bcrypt.compare confirms it matches the stored hash; 8/8 existing users backfilled, 0 left null.
+- GET /api/users: ADMIN branch now returns `password` (mapped from passwordPlain); non-admin branch still gets directory basics only — verified zero leakage of `password`/`passwordPlain` fields.
+- New endpoint POST /api/users/[id]/reset-password (admin-only): resets to Digitide@123 (default) or a custom password (policy-validated) and re-triggers the mandatory first-login flow (isFirstLogin=true).
+- admin-panel.tsx: added PASSWORD column (masked ••••••••, per-row eye reveal + copy-to-clipboard with toast) and ACTIONS column with a reset-password AlertDialog (default/custom password, busy state, e.preventDefault to keep dialog open during async call); ADMIN row intentionally has no reset action; fixed table overflow (overflow-auto + break-all emails + min-w-[34rem]).
+- Ops: restarted dev server after db:push (stale Prisma Client in the running process caused a 500 on login until restart).
+- Verified via curl: admin sees all 8 passwords; EMP001's GET /api/users returns 0 password fields; employee reset attempt → 403; admin reset EMP006 → TempTest@99 → login with it works → reset back to Digitide@123.
+- Verified via Agent Browser: password column renders (desktop + 390px mobile); eye reveals Avinash@2026; reset dialog → custom NehaNew@2026 shown in table; reset to default; logout → EMP006 + Digitide@123 login triggered the non-dismissable "Set your own password" modal → set NehaSafe@2026 → home greeting "Good Morning, Neha"; admin re-login reveals NehaSafe@2026 in the table (self-change sync proven). No console errors; lint clean.
+
+Stage Summary:
+- Feature shipped: at Admin → User Management the admin can now view, copy, and reset every user's current password (including passwords employees chose themselves).
+- Password lifecycle keeps the plaintext mirror in sync everywhere: create → user change → admin reset, plus bcrypt-verified backfill + lazy login backfill for legacy rows.
+- Security posture: bcrypt hash remains the credential store; plaintext mirror is exposed ONLY to ADMIN role clients; employees never receive password fields.
+- Current demo state: EMP006 (Neha Gupta) password = NehaSafe@2026 (set via the mandatory modal during E2E); all other users unchanged from Task 1 (ADMIN/Admin@123, EMP001/Avinash@2026, EMP005/Suresh@2026, rest Digitide@123).
+
+---
+Task ID: 3
+Agent: Z.ai Code (main)
+Task: Confirm & strengthen manager Team View — "When manager checks team view I can see my downline employee-wise task status."
+
+Work Log:
+- Reviewed /api/team route, lib/hierarchy.ts (getDescendantIds, canViewTask), team-view.tsx, and isManager flag in /api/auth/me — all core mechanics were already in place (downline-only tree, per-employee stats, read-only manager task access).
+- Fixed dead feature: hierarchy tree nodes had an unused onOpenEmployee prop — wired it in team-view.tsx (openEmployeeFromTree): clicking "View" on a tree node now expands + smooth-scrolls to that employee's row in the Employee-wise Task Status panel; added id/scroll-mt anchors on EmployeeRow.
+- Cleanup: removed unused scopeIds variable and leftover `isAdmin ? visibleIds : visibleIds` ternary in /api/team; documented that the viewer's own tasks are intentionally excluded from team view (they live on Home/My Tasks).
+- Verified via Agent Browser as Suresh (EMP005, DM): Team View tab visible; tree shows Suresh(YOU) → Amit(AM) → Kavita + Priya(TL) → Avinash/Rahul/Neha with report counts; 6 stat cards; employee-wise rows with chips (e.g. Avinash 4 total / 1 pending / 2 active / 1 overdue / 1 done); expanded rows list each task with due date, assigner, status badges; opened downline task detail — read-only with ASSIGNED TO(3) per-person statuses, COMPLETE HISTORY with timestamps, "0 of 3 employees completed"; tree View button expands the matching row.
+- Verified downline protection via browser + curl: Executive Neha has no Team View tab; her GET /api/team → 403; opening an upline task (Suresh→Amit) → 403 "You do not have access to this task"; Suresh opening the same task → 200.
+- Verified admin org scope after cleanup: /api/team returns ORG root → Suresh, 7 employees, 10 tasks, correct totals. Lint clean, dev.log clean, mobile/desktop layout verified earlier.
+
+Stage Summary:
+- Manager Team View confirmed working end-to-end: downline-only hierarchy tree + employee-wise task status (stats chips + per-task drill-down with full read-only history).
+- New: hierarchy tree is now interactive — View jumps to the employee's task status row.
+- Visibility rule proven at API level: upline sees downline (200), downline blocked from team data and upline tasks (403).
+- Note: Priya (EMP003) no longer has the default password (changed during earlier testing; unknown to log). Admin can reveal or reset it via Admin → User Management (Task 2 feature).
+
+---
+Task ID: 4
+Agent: Z.ai Code (main)
+Task: Team View redesign per user request — remove hierarchy tree; Employee-wise Task Status to the LEFT; on the RIGHT a searchable list of ALL tasks the downline is working on (keyword search + click-to-see-task-status).
+
+Work Log:
+- /api/team route: EmpTask now includes task description (for keyword search); types.ts TeamTask gained description field.
+- team-view.tsx rewritten: TreeNodeView removed entirely. New layout = stat cards + two panels: LEFT "Employee-wise Task Status" (unchanged expandable rows + employee search), RIGHT "All Tasks (n)".
+- All Tasks panel: flattens + dedupes employees' tasks into a task-wise list (a task shared by N employees appears once). Each row: title, due date, assigner, overlapping assignee avatars (+N overflow), "N assignees · X/Y done", aggregated status badge + Overdue badge. Sorted by earliest due (overdue floats to top). Keyword search matches title, description, assigner, and assignee names.
+- Aggregation logic: all assignees COMPLETED → Completed; any completed or any in-progress → In Progress; else Pending; overdue if past due and not everyone finished. (Initially partial-done showed "Pending"; fixed so 1/2 done reads "In Progress".)
+- Verified via Agent Browser as Suresh (EMP005): tree gone; 6 employees left, 6 deduped tasks right; search "report" → 1 (title), "rahul" → 4 (assignee), "Suresh Kumar" → 2 (assigner); clicked "Prepare training material for new joiners" → detail dialog with ASSIGNED TO(3) individual statuses + COMPLETE HISTORY; MIS report (1/2 done) shows Overdue + In Progress; mobile 390px stacks cleanly; lint clean; no console errors.
+
+Stage Summary:
+- Team View is now task-first: employee-wise status (left) + keyword-searchable all-tasks list (right), click any task for full status/history. Hierarchy tree removed from UI (API tree payload still computed, harmless).
+- Aggregated per-task status gives managers an instant portfolio view of downline work.
+
+---
+Task ID: 5
+Agent: Z.ai Code (main)
+Task: New requirement — task creator should be able to abort (cancel) their own task.
+
+Work Log:
+- Schema: Task gained `status` ("ACTIVE" | "ABORTED", default ACTIVE), `abortedAt`, `abortReason`; ran db:push and restarted dev server (stale Prisma Client).
+- New endpoint POST /api/tasks/[id]/abort: creator-only (403 for anyone else), optional reason (≤500 chars) recorded in history; sets status/abortedAt/abortReason and writes a TASK_ABORTED activity ("Aborted the task — \"reason\""); returns full refreshed task detail (assignments + activities). Double-abort → 400 "already been aborted".
+- Locks after abort: /api/tasks/[id]/status rejects assignee updates (400 "status updates are closed"); PATCH /api/tasks/[id] rejects creator edits/add-assignee (400 "can no longer be edited"). Comments stay open for wrap-up.
+- shared.tsx: new AbortedBadge (solid red with Ban icon); task-detail-dialog adds TASK_ABORTED to the history icon map.
+- task-detail-dialog.tsx: creator sees a red-outline "Abort Task" button in the footer (active tasks only) → AlertDialog confirm with optional reason Textarea (busy-safe e.preventDefault, success toast). Aborted state renders: red banner "This task was aborted by {creator} on {ts}" + reason, AbortedBadge replaces status/overdue badges in header, "STATUS UPDATES CLOSED" box replaces the assignee status buttons, add-assignee select hidden, comment box still available.
+- task-card.tsx: aborted cards show AbortedBadge (no status/overdue badges), muted title, no quick Start/Done buttons, subdued hover.
+- home-view.tsx: aborted tasks excluded from all stat buckets (Due Today / In Progress / Completed / Overdue) and from "Coming up next 7 days"; still listed under Today with badge, sorted last.
+- calendar-view.tsx: aborted tasks render a red dot regardless of per-person status; legend gained "Aborted".
+- /api/team: EmpTask carries `aborted`; aborted assignments count only into total + new `aborted` bucket (excluded from pending/inProgress/completed/overdue, never overdue); totals gained aborted.
+- team-view.tsx: 7th stat card "Aborted"; per-employee chip "N aborted"; employee rows + All-Tasks rows show AbortedBadge for aborted tasks (no overdue/status badges); keyword search also matches "abort(ed)".
+- Verified via curl: non-creator abort → 403; creator abort with reason → 200 + TASK_ABORTED history; double abort → 400; assignee status update after abort → 400; creator PATCH after abort → 400; /api/team totals {total:12, pending:7, inProgress:2, completed:1, overdue:3, aborted:2} with aborted tasks excluded from overdue/pending.
+- Verified via Agent Browser (desktop + 390px mobile): created task via New Task dialog as Avinash → Abort Task button → confirm dialog with reason → toast + red banner + AbortedBadge + history entry + button disappears; assignee Suresh sees banner, "Status updates closed" box, no status buttons, no Abort button; home cards/badges, calendar red dot + legend, team view aborted stat card + Rahul "1 aborted" chip + badge rows + search "abort" filters All Tasks to the aborted task. No console errors; lint clean.
+
+Stage Summary:
+- Feature shipped: only the task creator can abort a task (from the task detail dialog footer), with optional reason captured in the shared history. Aborting locks the task: no status updates by assignees, no edits/new assignees; comments remain open.
+- Aborted tasks stay visible everywhere (home today list, calendar with red dot, team view) but are excluded from all active stats and overdue flags, and can never be re-opened into active counts.
+- Demo state: 2 aborted test tasks exist — "Q3 vendor reconciliation" (creator Avinash → Suresh, due 19 Sep) and "Downline abort check" (creator Avinash → Rahul, due 19 Sep); "Browser abort test" (creator Avinash → Suresh, due 20 Sep 18:00 IST) aborted with reason "Requirement changed during sprint review".
+
+---
+Task ID: 6
+Agent: Z.ai Code (main)
+Task: Rebrand the entire UI from Emerald Green to the user-specified brand colour #2E4566 (navy blue).
+
+Work Log:
+- Generated a Tailwind 4 brand scale around #2E4566 (hsl 215/38%/29%) via script: brand-50 #f0f4f9 → brand-950 #0d1726, with brand-600 = #2e4566 exactly.
+- globals.css: added static @theme block with --color-brand-50..950; --primary → #2e4566, --ring → brand-500, light --chart-2 → brand-500; dark mode --primary → brand-200, --primary-foreground → brand-900, --ring/--chart-2/--sidebar-primary → brand-400.
+- Mechanical replace (longest-token-first) of every emerald-N/teal-N utility across 11 components: task-card, home-view, team-view, admin-panel, app, login-view, calendar-view, new-task-dialog, task-detail-dialog, force-password-modal, shared (emerald-N → brand-N; teal-N → brand-N).
+- Deliberate distinctions: StatusBadge COMPLETED now brand-100/800/200; history TASK_CREATED & ASSIGNED chips unified to brand-100/700; AVATAR_COLORS pool teal-600 → slate-600 to avoid duplicate navy slot.
+- Hand-tuned gradients for depth: home hero from-brand-700 via-brand-600 to-brand-500 (shadow-brand-200); header/loading/login logo tiles from-brand-400 to-brand-700; login/loading page wash from-brand-50 via-white to-brand-100 with brand-200 blur blobs.
+- Verified: grep confirms zero emerald/teal left in src; lint clean; Agent Browser (desktop 1280 + 390px mobile) — login page, admin panel, employee home hero, calendar (selected day/filters/dots), team view all render in navy; status semantics (amber/violet/red) and footer unchanged; no console errors or page errors.
+
+Stage Summary:
+- Site-wide brand colour is now #2E4566: shadcn --primary drives buttons/nav pills/focus rings, and the brand-50..950 scale drives tints, hover borders, chips, gradients and icons.
+- Green (emerald/teal) fully removed; semantic status colours intentionally preserved (amber Pending, violet In Progress, red Overdue/Aborted).
+- Dark mode tokens also rebranded (light-navy primary on dark surfaces).
+
+---
+Task ID: 7
+Agent: Z.ai Code (main)
+Task: "Every assigned task need to be completed. AI should analyze and prioritize task accordingly. Past dated pending (Overdue) task should show on home page as my task for today. Also overdue task should show time as well (Delayed by)."
+
+Work Log:
+- lib/dates.ts: added delayLabel(due, now) — human "delayed by" duration ("2 days 5 hrs" / "7 hrs" / "40 mins"), '' when not past.
+- New endpoint POST /api/tasks/prioritize (backend-only z-ai-web-dev-sdk): collects the user's ACTIVE open tasks (assigned-to-me with my status != COMPLETED, plus creator-only tasks until every assignee completes), builds compact LLM payload with precomputed human due facts ("overdue by X (was due ...)"/"due TODAY at ..."), asks the model for STRICT JSON {"order":[{id, reason}]} ranking under the rule "every assigned task must be completed" (overdue first, then due today, in-progress momentum, upcoming). Robust parsing (fence strip + brace slice), id validation, skipped ids appended in deadline order. 22s Promise.race timeout + heuristic fallback ordering (most-delayed → due-today → in-progress → upcoming) with deterministic reasons; response flagged source 'ai'|'fallback'; 60s per-user in-memory cache, {refresh:true} bypasses. Prompt hardened: reasons must not contradict provided due facts.
+- types.ts: PriorityItem interface. New ai-priority-panel.tsx on Home (after stat cards): ranked #1..#n list with reason lines, red "Delayed by X" chips, "follow up" chip for creator-only tasks, N/M done counts, click-to-open task, Re-analyze button with spinner, skeleton loading, fallback notice, empty state. ESLint react-hooks/set-state-in-effect fixed by moving initial fetch into the effect with alive-guard and event-handler-driven Re-analyze state.
+- home-view.tsx: "My Tasks for Today" now includes past-dated open tasks (my assignment not COMPLETED; creator-only kept until all assignees complete; aborted only on their due day). Sort: overdue first (most delayed on top), then today's by status/time, aborted last. Hero copy now calls out overdue ("2 overdue tasks need your attention, plus N due today"). "Due Today" stat fixed to count only tasks actually due today (no overdue double-count). Empty state copy updated.
+- "Delayed by" everywhere: task-card meta row (overdue shows due date WITH time "18 Sept 2026, 4:00 pm" + red AlarmClock "Delayed by 1 day 9 hrs"), task-detail-dialog due row, team-view EmployeeRow + All-Tasks TaskRow.
+- Verified via curl: EMP005 → source 'ai', 2 creator-follow-up items ranked; EMP001 → overdue IN_PROGRESS task ranked #1 "overdue by 10 hrs, client onboarding critical"; EMP002 → 4-item plan, both overdue tasks ranked 1-2 with fact-accurate reasons, cache + refresh param working.
+- Verified via Agent Browser as Rahul (EMP002, had to set first-login password Rahul@2026): hero overdue callout; AI Priority panel ranked list with delayed chips + reasons; My Tasks for Today shows both overdue tasks (Q3 audit "Delayed by 1 day 9 hrs", MIS report "Delayed by 7 hrs") most-delayed-first with Start/Done quick actions; detail dialog shows Due with time + red Delayed by line; 390px mobile stacks cleanly; zero console/page errors; lint clean; dev.log clean.
+
+Stage Summary:
+- Shipped: AI prioritization ("what to work on first") on Home with graceful deadline-based fallback; overdue open tasks now surface in "My Tasks for Today" (most delayed first) so every assigned task gets closed; overdue tasks display due time + "Delayed by <duration>" on cards, detail dialog, team view and AI panel.
+- New demo credential: EMP002 Rahul Verma password = Rahul@2026 (set via first-login modal during E2E).
+- Note: AI ordering/reasons come from the LLM (source:'ai'); when AI is unavailable the endpoint silently returns the same plan shape in strict deadline order (source:'fallback', banner shown in UI).
+
+---
+Task ID: 8
+Agent: Z.ai Code (main)
+Task: "As an employee, for any task with due date 18 that I completed on the 20th, the calendar view should reflect it on the 20th (not the 18th) for me. For the task creator it should reflect under the due date set by creator."
+
+Work Log:
+- Confirmed TaskAssignment.completedAt already exists and /api/tasks/[id]/status stamps it on COMPLETED (nulls it on reopen) — no schema change needed.
+- /api/tasks GET: new applyTaskWindow() for scope=today|date|range. filter=created keeps dueDate-only bounds (creator tracks the deadline they set); all/assigned now match tasks due in the window OR whose viewer's own assignment was completedAt in the window, so a late-completed task is returned when browsing the month it was finished in.
+- calendar-view.tsx: calendarDayOf(t, me) places each task — creator → due date; non-creator assignee with COMPLETED+completedAt → their completion day (IST); open/aborted → due date. byDay map uses it, so a completed task appears ONLY on the completion day for the assignee and ONLY on the due date for the creator. Dot colors use new shared viewerStatus() (own status, or aggregate for creator-only views: all done → Completed, any in-progress → In Progress). Agenda subtitle "N tasks due" → "N tasks scheduled"; legend gained a footnote explaining the placement rule.
+- task-card.tsx: new meta chip "Completed on {date}" (CheckCircle2, brand) shown for my completed assignments with completedAt; badge now uses viewerStatus() so creators see a truthful aggregate status instead of a stale "Pending".
+- Mobile fix (pre-existing bug surfaced during verification): home task grids used an implicit single grid column whose auto track expanded to the truncated title's min-content (~533px) → horizontal overflow at 390px (scrollWidth 549 before changes). Fixed with explicit grid-cols-1 (minmax(0,1fr)) tracks in home-view today/upcoming grids + min-w-0 on TaskCard root; home scrollWidth now 390.
+- Test data: ADMIN created "Vendor invoice reconciliation (calendar check)" due 18 Sept 18:00 IST → assigned Rahul (EMP002) + Neha (EMP006); Rahul completed it (completedAt = 20 Sept 02:07 IST — machine clock is UTC+5:30, exactly the user's "due 18, done 20" scenario). Avinash (EMP001) created "Client escalation follow-up call" due 17 Sept → Suresh (EMP005) completed it (also lands 20 Sept IST).
+- Verified via curl: Rahul's range query returns the task for the 20th via the completedAt clause even though dueDate is outside; ADMIN/creator gets it only around the 18th (also with filter=created); creator window for the 20th excludes it.
+- Verified via Agent Browser: Rahul — task on 20 Sept with "Completed · 18 Sept 6:00 pm · Completed on 20 Sept 2026 · 1/2 done", absent from his 18 Sept (only his open Q3 audit there); Avinash (creator) — task on 17 Sept "Completed · 17 Sept 6:00 pm · Created by you", absent from his 20 Sept; Suresh — task on his 20 Sept with Completed-on chip, his 17 Sept agenda empty; Neha (open assignee) — task stays on 18 Sept with Pending + Overdue + "Delayed by 1 day 8 hrs". Home/Task 7 behaviors intact (AI priority panel, overdue roll-forward, hero callout). Screenshots: /tmp/task8-*.png. Console/page errors: none; lint clean.
+
+Stage Summary:
+- Shipped: calendar is now perspective-aware — employees see a task on the day they actually finished it (due 18 + done 20 → shows on the 20th), while creators always see it under the due date they set; grid dots, card badges, legend footnote and agenda copy all follow the same rule, and the API returns late-completed tasks when browsing the month they were completed in.
+- Bonus fixes: creator-facing status badges/dots now show aggregate progress (viewerStatus); pre-existing 390px horizontal overflow on the Home page eliminated (grid-cols-1 + min-w-0).
+- Demo state: "Vendor invoice reconciliation (calendar check)" (creator ADMIN, assignees Rahul done 20 Sept / Neha open-overdue) and "Client escalation follow-up call" (creator Avinash, assignee Suresh done 20 Sept) exist to demo the feature.
+
+---
+Task ID: 9
+Agent: Z.ai Code (main)
+Task: "Can you give more modern look for home page header which is having 'Good Morning Avinash'."
+
+Work Log:
+- lib/dates.ts: added fmtISTClock (live "hh:mm:ss am" IST clock) and fmtWeekdayDate ("Monday, 22 Sep" eyebrow date).
+- globals.css: new @theme animation tokens --animate-float (emoji bob) and --animate-glow-slow (hero glow breathing), with @keyframes; both respect motion-reduce in usage.
+- home-view.tsx hero rewritten as a "bento glass" dashboard header: diagonal deep-navy gradient (brand-900→700→600) + three radial glow blobs (one slowly breathing) + subtle white dot-grid texture + ring-1/shadow-xl; initials avatar tile (glass gradient, rounded-2xl, from initialsOf); glassy uppercase eyebrow chips for date and a LIVE ticking IST clock (1s interval, pulsing lime dot, tabular-nums); greeting now sets the user's first name in serif-italic with a brand gradient (bg-clip-text) and a floating time-of-day emoji; New Task CTA upgraded (lift + deeper shadow on hover, Plus icon rotates 90°).
+- Stats absorbed into the hero: the 4 standalone white stat cards below the hero were replaced by 4 glassmorphic tiles inside the hero (2×2 mobile / 4-col desktop, hover lift): Overdue tile turns red-glass with pulsing alert dot when > 0, In Progress violet-glass, Due Today/Completed neutral glass. Aria: role="group" aria-label="Task statistics", role="progressbar" with valuenow/min/max on the new progress bar.
+- New "Today's focus" progress bar under the tiles: thin glass bar + "X of Y closed · P%" counting today's list (incl. rolled-forward overdue; aborted counted as closed) — reinforces the "every assigned task must be completed" goal.
+- Verified via Agent Browser: desktop 1280px as Avinash (calm state: neutral tiles, "1 of 1 closed 100%", live clock ticking 02:42:56 AM IST) and as Rahul (EMP002) overdue state (red Overdue tile 2 with pulsing dot, hero callout "2 overdue tasks need your attention", "0 of 2 closed 0%"); mobile 390px stacks cleanly (avatar + chips, full-width CTA, 2×2 tiles, progress bar) with scrollWidth exactly 390 (no overflow); AI Priority panel, My Tasks for Today, upcoming section all unaffected; zero console/page errors; lint clean; dev.log clean. Screenshots /tmp/task9-hero-*.png.
+
+Stage Summary:
+- Home header is now a modern bento-glass hero: layered navy gradient + dot grid + glows, glass date/live-clock chips, serif-italic gradient name, glassmorphic stat tiles (red pulsing when overdue), today's-progress bar, and micro-interactions (floating emoji, rotating Plus, tile/button hover lifts).
+- Old standalone stat-cards row removed — all four KPIs now live inside the hero, making the header the dashboard centerpiece; all Task 7 behaviors (overdue roll-forward, delayed-by chips, AI panel) verified intact.
+
+---
+Task ID: 10
+Agent: Z.ai Code (main)
+Task: "☀️ emoji after Good Morning Avinash is spoiling the look. Replace this emoji with something."
+
+Work Log:
+- home-view.tsx: replaced the ☀️/🌤️/🌆 emoji after the greeting name with a small circular glass badge (h-7/h-8 rounded-full bg-white/10 ring-white/20 backdrop-blur) holding a time-of-day Lucide icon — Sunrise (before 12), SunMedium (12–17), MoonStar (evening) — colored amber-300 for day, brand-200 for evening; removed the now-unused emoji variable; float animation on the accent dropped for a calmer look.
+- Verified via Agent Browser (desktop 1280 + mobile 390 as Avinash): badge renders inline after the serif-italic name, hero otherwise unchanged (chips, tiles, progress bar); scrollWidth 390 at mobile (no overflow); zero console/page errors; lint clean. Screenshot /tmp/task10-hero-icon.png.
+
+Stage Summary:
+- Greeting accent is now a subtle glass icon badge that adapts to time of day (Sunrise/SunMedium/MoonStar) instead of a raw emoji — consistent with the site's Lucide icon language and the navy brand palette.
+
+---
+Task ID: 11
+Agent: Z.ai Code (main)
+Task: "As an employee if any task gets assigned to me and I work on that task for my part then for further completion I should be able to send that task to someone."
+
+Work Log:
+- New endpoint POST /api/tasks/[id]/handoff (assignee-only): body { toUserId, note? (≤300 chars) }. Validates task ACTIVE (aborted → 400 "handoff is closed"), session user has an assignment with status != COMPLETED (403 non-assignee / 400 already-completed), target exists+active, target != self (400), target not already an assignee (400). In a db.$transaction: deletes my TaskAssignment, creates a fresh PENDING assignment for the target, and writes TASK_HANDOFF activity ("Handed off their part to {name} ({code}) for further completion — \"note\""). Returns refreshed task detail incl. assignments + activities + handedTo for the toast.
+- task-detail-dialog.tsx: new "Hand off" row inside the "Update my status" card (visible for my open part on active tasks: hint "Pass your part to a colleague for further completion." + outline button with Forward icon). Opens an AlertDialog: colleague <select> populated from /api/users (excludes self + existing assignees; confirm disabled until chosen), optional note Textarea, brand-styled confirm with busy spinner. On success: task state refreshed (status card disappears for the hander, ASSIGNED TO list updates), onChanged() refreshes lists, toast "Part handed off — transferred to {name} as Pending"; errors surface via toast. History timeline gained ACTION_STYLE TASK_HANDOFF (cyan Forward icon).
+- Fixed a pre-existing mobile bug surfaced during verification: task-detail grid used an implicit auto track (no grid-cols class) whose max-content sizing (meta row "Due … + Owner …" on one line) stretched the dialog content to ~352px inside a 316px scroll area → right-edge clipping at 390px. Fixed with explicit grid-cols-1 (minmax(0,1fr)); desktop md:grid-cols-2 unchanged.
+- Verified via curl: 5 guards (self → 400; existing assignee → 400; non-assignee → 403; completed part → 400; aborted task → 400); real handoff Rahul(EMP002)→Neha(EMP006) on "Prepare daily MIS report" with note → assignments become EMP001 COMPLETED + EMP006 PENDING, TASK_HANDOFF activity on top, task gone from Rahul's list, present as PENDING in Neha's; post-handoff access check — Rahul (no longer participant/manager) gets 403 on task detail.
+- Verified via Agent Browser (desktop 1280 + mobile 390): Rahul → task detail → Hand off → select "Suresh Kumar (EMP005)" (picker correctly excluded self + Avinash) + note → confirm → toast + ASSIGNED TO updated + cyan handoff history entry; Suresh's home now ranks the task in AI Priority, his detail shows "(you) Pending", full handoff history, own Hand off row; 390px dialog renders with zero clipping after the grid fix (scrollWidth 390, sc 316=client); zero console/page errors; lint clean; dev.log clean.
+
+Stage Summary:
+- Shipped: an assignee can hand off their open part of any active task to a colleague for further completion — a true transfer (my assignment removed, target added as Pending) recorded in the shared history with an optional note; creators keep full control (add assignees/abort) and other assignees are untouched. Handed-off work flows into the receiver's Home/Today/AI plan automatically.
+- Bonus fix: eliminated right-edge clipping of the task-detail dialog on mobile (390px) caused by an implicit auto grid track.
+- Demo state: "Update SOP documentation" (creator Suresh) now assigned to Suresh (Pending, after receiving handoff from Rahul) + Avinash (In Progress); "Prepare daily MIS report" (creator Priya) assignees Avinash (Completed) + Neha (Pending, received handoff from Rahul).
+
+---
+Task ID: 12
+Agent: Z.ai Code (main)
+Task: "Whoever has employees under his downline should get one more tab after Team View called Reports. He should be able to see report for only his downline. Different cuts and graphs need to be showcased on this page showcasing how employees are performing. Filters should be available with month, process, designation, L1 Manager, employee. All filters should also have option to select all. Manager should also be able to export detailed report excel file."
+
+Work Log:
+- Installed xlsx (SheetJS 0.18.5) for server-side Excel generation; recharts (already present) for graphs.
+- src/lib/reports.ts (server report engine): getReportScope (manager → full downline via getDescendantIds; ADMIN → whole org; 403-equivalent null when no reports); loadReportRows (one ReportRow per TaskAssignment of visible users with task+creator join; derives overdue (open past due, aborted excluded), onTime (completedAt ≤ dueDate), delayDays (late-completion days or days-past-due)); filterRows/filterUsers (month = IST due-month key YYYY-MM, process, designation, L1 manager, employee); aggregateKpis (completion rate excludes aborted; on-time rate of completed); aggregateStatusMix (6 mutually exclusive donut buckets: on-time/late/overdue/in-progress/pending/aborted); aggregateMonthly (due by due-month vs completed/late by completion-month, last ≤12 months); aggregateEmployees (per-employee stats incl. completionRate, onTimeRate, avgDelayDays over late+overdue); aggregateGroup (process/designation cuts: completed/overdue/open/aborted); buildOptions (month/process/designation/manager/employee dropdown options); parseFilterParams (absent param = All; present-but-empty = explicit none via '__NONE__' sentinel); UNMANAGED_KEY '__UNASSIGNED__' + managerMatches for org-root employees.
+- API GET /api/reports: session-guarded, scope-guarded (403 "You do not have any team members reporting to you"), returns { scope, options, kpis, statusMix, monthly, byEmployee, byProcess, byDesignation, rows }.
+- API GET /api/reports/export: same auth + filters; SheetJS workbook with 3 sheets — Summary (title, generated-by/on IST, scope, filters-applied block with 'All'/'None' labels, 11 KPI rows), Employee Performance (16 cols incl. completion %, on-time %, avg delay; autofilter), Task Details (13 cols incl. IST due/completed datetimes, status, state, overdue flag, delay days; autofilter); column widths set; Content-Disposition attachment TaskFlow-Report-<istToday>.xlsx.
+- multi-select.tsx: reusable MultiSelect (Popover + combobox trigger with N/M count chip, Select-all toggle, Clear, search box when >8 options, scrollable checkbox list max-h-64). Option rows use a span-based check indicator (Radix Checkbox would nest button-in-button → hydration error found and fixed during E2E).
+- reports-view.tsx: header (scope subtitle + Export Excel with spinner); 5-filters bar grid (Month/Process/Designation/L1 Manager/Employee) + Reset; 6 KPI tiles with progress bars; charts — status-mix donut (center total + count legend), monthly trend ComposedChart (Assigned area + Completed line + Completed-late dashed), outcome-by-employee horizontal stacked bars (on-time/late/overdue/in-progress/pending), completion leaderboard (ranked, avatars, progress bars, scrollable), performance-by-process and by-designation stacked bars; Detailed task log table (sticky header, max-h-96 scroll, click row → task detail dialog, status badges, red delay days); empty state with reset CTA; skeletons while loading; stale-response guard via request id.
+- app.tsx: new 'reports' tab (BarChart3 icon) right after Team View, visible when me.isManager OR ADMIN; renders ReportsView (task-row clicks reuse TaskDetailDialog).
+- Data: seeded Aug 2026 (3 tasks: 3 on-time + 1 late completions) and Oct 2026 (1 pending, 1 in-progress) demo tasks so trend/month-filter show meaningful cuts across Aug/Sep/Oct 2026.
+- Scope/filter edge bugs found & fixed during verification: (1) manager's DIRECT reports were dropped when all manager options selected (viewer is their managerId but wasn't an option) → viewer added to L1 Manager options as "Name (CODE) — you"; (2) org-root employees (managerId null, e.g. Suresh under ADMIN) were dropped by manager filter → dedicated "No manager (top level)" option (__UNASSIGNED__); (3) Clear/empty selection now means explicit none (server '__NONE__' sentinel) so counts display honestly (0/3 + empty state).
+- Verified via curl: ADMIN org 7 emp/23 rows default; all-selected-params parity 7/23; managers=__UNASSIGNED__ → 1/4 (Suresh only); Suresh team 6/19; Priya sub-manager 3/14 with her as only manager option; month filter Aug → 4/100%; employee-without-downline 403; export 200 with 3 sheets, filtered export correct (Aug+Sep × Operations × Executive → 12 rows, only Rahul/Neha/Avinash), 'None' labels for empty selections.
+- Verified via Agent Browser (desktop 1280 + mobile 390, as Suresh/ADMIN/Priya): tab order Home→My Tasks→Team View→Reports; KPIs match API; donut center total; all charts render with legends; deselect Aug → 19→15 rows; Select-all toggles 15↔19; Clear → 0/3 + "No assignments match" empty state + Reset restores; report row click opens task detail dialog; Export Excel button → GET /api/reports/export 200 with full filter query; non-manager Avinash has NO Reports tab (only Home/My Tasks); scrollWidth 390 on mobile (no overflow); zero console/page errors; lint clean.
+- Bonus pre-existing bug fixed: Team View bottom grid used an implicit auto track → 715px document overflow at 390px; fixed with grid-cols-1 (minmax(0,1fr)) + min-w-0 on both cards (same class of bug as Task 8 home fix); Team View now measures 390 too.
+
+Stage Summary:
+- Shipped: manager/admin-only "Reports" tab after Team View — downline-scoped performance dashboard with 6 KPI tiles, 5 interactive multi-select filters (each with Select all/Clear/search), status donut, monthly due-vs-completed trend, per-employee stacked outcome bars, completion leaderboard, process & designation cuts, a detailed task log (rows open the task dialog), and one-click detailed Excel export (Summary / Employee Performance / Task Details sheets, filters honored).
+- Guardrails: employees without downline get no tab and a 403 from the API; scopes strictly follow the same downline rule as Team View (manager can never see upline); ADMIN sees the whole org.
+- Demo state: Aug/Sep/Oct 2026 data spread; Suresh (EMP005, Suresh@2026) sees 6 downline employees, Priya (EMP003, Test@123) sees 3, ADMIN sees org-wide 7. Pre-existing Team View mobile overflow fixed as a bonus.
+
+---
+Task ID: 13
+Agent: Z.ai Code (main)
+Task: "For managers who have downline below them there should be 2 task lists on the home page: My Tasks for Today and, on the right side, My Team Tasks for Today."
+
+Work Log:
+- New API GET /api/team/tasks (src/app/api/team/tasks/route.ts): manager → tasks whose creator or any assignee is in the viewer's downline (getDescendantIds, same rule as canViewTask/Team View); ADMIN → org scope (non-ADMIN employees); plain employee → { tasks: [] }. Tasks the viewer personally created or is assigned to are EXCLUDED (they already live in the viewer's own My Tasks list, so each task appears in exactly one list). Returns full TaskDTO[] (creator + per-assignee statuses) ordered by dueDate, take 500.
+- New TeamTaskCard (src/components/task-manager/team-task-card.tsx): manager-lens card for tasks the viewer has no assignment on — aggregate status via viewerStatus (all done → Completed, any In Progress → In Progress, else Pending), Overdue badge + red border + red "Delayed by X" chip when the task is open past due, "All N completed" check, "By {creator}", avatar stack (completed assignees dimmed, tooltip lists each member — status), and "x/y done" progress text. Keyboard accessible (role=button, Enter/Space).
+- home-view.tsx: showTeamList = me.isManager || role==='ADMIN'; separate teamTasks fetch from /api/team/tasks (only when enabled, refreshKey-driven) + teamToday useMemo mirroring the exact My-Tasks-for-today rules (due today; open overdue rolled forward; aborted only on its due day; overdue first most-delayed-top, then due time, aborted sink). Section split: managers get a lg:grid-cols-2 layout — left "My Tasks for Today" (cards single-column in the half width), right "My Team Tasks for Today" with a UsersRound icon header and live count pill; employees keep the original single full-width list (lg:grid-cols-2 cards). Team column has its own skeletons and a friendly empty state ("Team is all caught up!") without emoji. min-w-0 guards against grid blowout.
+- Verified API scoping via curl: Suresh (EMP005, full downline) → 9 downline tasks with his own creations/assignments excluded; ADMIN → 15 org tasks (own excluded); Priya (EMP003 sub-manager) → 8 tasks scoped to her downline, her own created tasks excluded; Rahul (EMP002, no downline) → {tasks:[]}.
+- Demo data: seeded "Draft weekly team review summary" (creator Priya, assignees Rahul+Neha, due today 16:00 IST) so a due-today team item shows alongside rolled-forward overdue ones.
+- Verified via Agent Browser: Priya (1280px) — two lists side-by-side, team card shows Pending+Overdue+red delayed chip+By Administrator+avatars+1/2 done; clicking a team card opens the full read-only task detail dialog (description/due/owner/ASSIGNED TO/history); Suresh — left: his 2 tasks (created + aborted-assigned), right: 4 team tasks sorted overdue-first (1d17h → 1d15h → 15h) then today's 4pm task, zero duplication between lists; mobile 390px — lists stack, scrollWidth 390 (no overflow), footer pushed naturally; Rahul (plain employee) — NO team section, single list only; ADMIN home remains the Admin panel by design (pre-existing role behavior). Zero page/console errors; GET /api/team/tasks 200 ~33ms; lint clean.
+
+Stage Summary:
+- Shipped: managers (anyone with direct reports) now get a two-column home page — "My Tasks for Today" on the left and "My Team Tasks for Today" on the right — where the team list covers every task visible through their downline (created by or assigned to a report), excluding tasks they are personally part of, using the same today + overdue-roll-forward rules and sort as their own list. ADMIN keeps the Admin panel as its home tab (org-wide reporting already lives in Reports).
+- Demo state: Suresh sees 4 team tasks today (3 overdue + 1 due 4pm); Priya sees 2 (overdue + aborted-due-today); employees see no team list. New seeded task "Draft weekly team review summary" (Priya → Rahul+Neha, due 20 Sep 2026 4:00 pm IST) is pending 0/2.
+
+---
+Task ID: 14
+Agent: Z.ai Code (main)
+Task: "While creating task there should be a checkbox named recurring. Once checked it should show further options to make the task recurring and the mechanism should update accordingly."
+
+Work Log:
+- Schema: Task gained recurring (bool, default false), recurFreq (DAILY|WEEKLY|MONTHLY), recurInterval (every N, >=1), recurEndType (NEVER|ON_DATE|AFTER_N), recurEndDate (inclusive), recurCount (AFTER_N total), recurOccurrence (1-based), rootTaskId (series anchor) + index; db:push + dev server restart.
+- src/lib/recurring.ts (pure, client-safe): RECUR_FREQS/RECUR_UNIT option tables, recurrenceLabel ("Repeats weekly" / "Repeats every 3 days" / …), stepDue (+N days / +N weeks / month-add with day-of-month clamp), nextDueDate (advances the due date by cadence steps until strictly after now → completing a task long after its due date never spawns an instantly-overdue copy and weekday/month-day cadence stays stable), seriesContinues (AFTER_N: occ < count; ON_DATE: next IST due date <= end date; NEVER: always).
+- src/lib/recurring-server.ts: maybeSpawnNextOccurrence — called after any status update to COMPLETED; when EVERY assignment of a recurring ACTIVE task is COMPLETED it creates the next occurrence in one create: same title/description/creator/current assignee set (fresh PENDING), due = nextDueDate, recurrence config copied, recurOccurrence+1, rootTaskId linked; writes child TASK_CREATED/ASSIGNED activities ("auto-created when the previous occurrence was completed") and a RECURRENCE activity on the completed task ("occurrence #N scheduled for <date>, <time> IST"). Idempotent via existence check on (rootTaskId, occurrence N+1) → reopen + re-complete cannot duplicate. Aborting a recurring task ends the series (no spawn).
+- POST /api/tasks: validates recurrence (freq required; interval clamped 1–99; ON_DATE needs YYYY-MM-DD end >= first due; AFTER_N needs count >= 2) and persists config; adds a RECURRENCE activity ("Recurring series started — Repeats weekly — 4 times total. The next occurrence is created automatically when every assignee completes this task.").
+- new-task-dialog.tsx: "Recurring" checkbox (Repeat icon + hint "A new copy with the same team is created automatically each time this task is completed."); when checked reveals an options panel — Repeats segmented control (Daily/Weekly/Monthly), Every [N] <unit>, Ends segmented control (Never / On date → date input min = due date / After N times → number input 2–52); client validation mirrors server; state resets on dialog open; body sends recurrence fields only when checked.
+- Display: TaskCard + TeamTaskCard gained a brand-colored "Repeats …" chip (Repeat icon) in the meta row; TaskDetailDialog meta shows "Repeats weekly · occurrence 1 of 4" (or "· until <date>" / "· no end date"); history timeline gained RECURRENCE style (emerald, Repeat icon) — falls back gracefully for old activities.
+- Verified via curl: create DAILY/NEVER → complete → occurrence #2 due next day 18:00 IST spawned (PENDING, same assignee, rootTaskId set); reopen + re-complete → still exactly one child (guard works); WEEKLY completed 7 days late → next = anchored 27 Sep (skips past-due 20 Sep); AFTER_N ×2 → occ2 spawns, occ3 blocked; ON_DATE end 26 Sep → occ2 (26th) spawns, occ3 (27th) blocked; abort → zero children; validation 400s for missing freq / missing end date / end-before-due / count=1; RECURRENCE activity present on both series tasks.
+- Verified via Agent Browser: created "Weekly operations review prep" (Weekly, After 4 times, Amit) through the dialog — checkbox reveals options, submit persists correct config (API-confirmed) with RECURRENCE activity; detail dialog shows "Repeats weekly · occurrence 1 of 4"; home cards show "Repeats daily" chips. Bonus pre-existing bug fixed: calendar view's outer grid used an implicit auto track → 481px document overflow at 390px (month-grid + day-agenda cards); fixed with grid-cols-1 (minmax(0,1fr)) + min-w-0 on both cards — calendar now measures 390 on mobile, desktop lg:grid-cols-5 layout unchanged. Zero console/page errors; lint clean; dev.log clean.
+- Demo state: "Weekly operations review prep" (Suresh → Amit, due 27 Sep 18:00 IST, weekly ×4, occurrence 1/4) and "Daily standup notes" (Suresh → Amit, due today 18:00, daily, no end). Completing either auto-spawns the next occurrence. e2e test series were cleaned up (aborted pending copies; completed/aborted test tasks remain in history only).
+
+Stage Summary:
+- Shipped: end-to-end recurring tasks — a "Recurring" checkbox in Create Task reveals Repeats (Daily/Weekly/Monthly), Every-N, and Ends (Never / On date / After N times); the mechanism materializes the next occurrence automatically the moment every assignee completes the current one (fresh Pending copies for the same team, cadence-anchored future due date, end conditions honored, duplicate-proof across reopen/re-complete, abort ends the series). Recurring tasks are labeled with a Repeat chip on home/my-task/team cards and full series info in the detail dialog + history.
+- Bonus: fixed pre-existing 390px horizontal overflow on the My Tasks calendar page (implicit auto grid track → grid-cols-1 + min-w-0).
+
+---
+Task ID: 15
+Agent: Z.ai Code (main)
+Task: "On home page task statistics I can see how many tasks are overdue and has other status. I want if I click on any of that card the popup should appear showing list view of those status tasks and if clicked on any task from that list then task info should appear."
+
+Work Log:
+- home-view.tsx: the four hero stat tiles (Overdue / Due Today / In Progress / Completed) are now real buttons — cursor-pointer + hover lift + focus-visible ring, aria-haspopup="dialog", title hint; zero-count tiles render disabled (un-clickable, skipped by keyboard). The stats useMemo was refactored so each status bucket list is the single source of truth for BOTH the tile number and its popup: overdue = assigned-active open past due (most delayed first), dueToday = due-today non-completed (same todays base as before, incl. creator-side tasks), inProgress, completed (newest completion first via assignment completedAt). Counts are now list lengths, so tile numbers and popup contents can never diverge; viewerStatus() is used for the effective status (also fixes creator-only due-today tasks with all assignees done being counted as open).
+- New stat-list-dialog.tsx (StatListDialog + StatTaskRow): centered Dialog with colored status icon + "{Label} Tasks" title + count pill + one-line description per bucket; scrollable task list (max-h-96 overflow-y-auto, thin scrollbar); each row is a button showing title, meta chips — red "Delayed by X" (AlarmClock) for overdue rows, "Due {date}, {time}" otherwise, "Completed on {date}" for completed rows — StatusBadge, brand "Repeats …" chip for recurring tasks (Task 14 carry-over), "By {creator.name}", hover chevron; footer hint "Click any task to view its full details." Clicking a row closes the list popup and opens the full TaskDetailDialog via onOpenTask (no nested-dialog edge cases).
+- Bonus pre-existing bug fixed: PATCH /api/tasks/[id] 500 "istDueDate is not defined" (missing import) — editing a task's due date from the UI had been broken; added the import to src/app/api/tasks/[id]/route.ts and verified the edit endpoint works.
+- Demo data seeded for Suresh via API (dueDate as {date,time} IST): "Resolve pending vendor payment escalations" (due 19 Sep 6 pm IST, pending → overdue) and "Prepare Q3 process audit checklist" (due 21 Sep 5 pm IST, moved to In Progress), giving the manager home a live 1/2/1/7 stat mix.
+- Verified via Agent Browser: API-derived expected buckets match tiles exactly — Rahul (EMP002): 1 overdue / 1 due today / 0 in progress (tile disabled) / 2 completed; Suresh (EMP005 manager): 1 / 2 / 1 / 7. Overdue popup lists the task with "Delayed by 3 hrs" chip + Pending badge + "By Priya Nair"; row click opens the full task detail dialog (desktop + mobile); Completed popup shows 2 (then 7) items newest-first ("Completed on 20 Sept 2026" before 16 Aug 2026) and the 7-item list scrolls within max-h-96 (scrollHeight > clientHeight confirmed); In Progress popup shows the corrected "Due 21 Sept 2026, 5:00 pm" row; keyboard focus + Enter on a tile opens its dialog; mobile 390px — dialog rows wrap, document scrollWidth stays 390, row click still opens detail; zero page/console errors; lint clean; dev.log clean.
+
+Stage Summary:
+- Shipped: home-page stat tiles are now drill-downs — click Overdue / Due Today / In Progress / Completed to open a popup listing exactly those tasks (same numbers as the tiles, single source of truth), and click any task in the list to open its full task info dialog. Zero-count tiles are disabled; recurring tasks carry their "Repeats …" chip into the lists; completed lists are newest-first.
+- Bonus: fixed broken due-date editing (PATCH /api/tasks/[id] missing istDueDate import → 500) found during verification.
+- Demo state: Suresh's home now shows Overdue 1 / Due Today 2 / In Progress 1 / Completed 7 with two fresh tasks (vendor payment escalations overdue; Q3 audit checklist in progress).
+
+---
+Task ID: 16
+Agent: Z.ai Code (main)
+Task: "Recurring mechanism not working. Should get option to select repeat day and update in calendar as well accordingly."
+
+Work Log:
+- Diagnosis: the completion→spawn mechanism was NOT broken — an end-to-end API test (create daily recurring → assignee completes → occurrence #2 spawned next day 21:00 IST PENDING, same assignee, idempotency intact) and dev.log both confirmed it works. The real gaps were (1) no way to pick WHICH days a weekly task repeats on (it blindly stepped +7d from the due date) and (2) the calendar only ever showed the single current occurrence, so the recurring schedule was invisible — both now implemented.
+- Schema: Task += recurWeekdays String? (WEEKLY repeat days, comma-separated ISO weekday "1,3,5" = Mon,Wed,Fri) and recurMonthDay Int? (MONTHLY explicit day-of-month 1–31, clamped to month length); db:push + dev server restart.
+- src/lib/recurring.ts (rewritten, still client-safe): parseWeekdays/weekdaysToStr (canonical "1,3,5" codec), istWeekday (weekday derived from the IST calendar date — not UTC — to survive early-morning IST due times), weekdayListLabel ("Mon, Wed & Fri"), stepSlot (one cadence step honoring repeat days: next selected weekday strictly after the current date; monthly with explicit day via monthlyStep which builds the target month in IST parts and clamps to month length), nextDueDate now takes StepOptions {weekdays, monthDay} (when weekdays are picked the series repeats every week on those days — interval clamps to 1), recurrenceLabel gains "Repeats weekly on Mon, Wed & Fri" / "Repeats monthly on day 15", and projectOccurrences() projects future slots of an active series inside a day range ({day, at, occ}[] — slots strictly after today AND the current due date, AFTER_N/ON_DATE end conditions honored, cap 90).
+- recurring-server.ts: spawner passes {weekdays, monthDay} into nextDueDate and copies recurWeekdays/recurMonthDay onto the spawned occurrence.
+- POST /api/tasks: parses + sanitizes recurWeekdays (parseWeekdays→weekdaysToStr; forces interval=1 when days picked) and recurMonthDay (clamped 1–31, only for MONTHLY); RECURRENCE activity line uses the enriched label.
+- new-task-dialog.tsx: "REPEAT ON" weekday chip picker (Mon–Sun multi-select, aria-pressed) appears for Weekly; when ≥1 day is picked the "Every N weeks" row is replaced by "repeats every week on the selected days"; Monthly gains an optional "On day [1–31] of the month" input (empty = reuse the due date's day); a live "Schedule: …" preview line at the bottom of the options panel mirrors recurrenceLabel exactly; payload sends recurWeekdays/recurMonthDay (interval forced 1 for weekday sets).
+- calendar-view.tsx: fetch widened from month bounds to the full 6-week grid (edge weeks + cross-month projections now always available); projByDay useMemo projects every active recurring series in view via projectOccurrences; month cells render hollow brand-bordered dots for projected slots (after real dots, shared 3-dot budget with +N overflow counting both) and aria-labels mention "N upcoming repeats"; the day agenda appends an "UPCOMING REPEATS" section of dashed brand cards (Repeat icon, title, full recurrence label, slot time IST, "Occurrence #N — created automatically once the current one is completed") that are intentionally non-clickable since they are previews, not real tasks; agenda subtitle shows "· N upcoming repeats"; legend gains the hollow-dot "Upcoming repeat" item and the foot note explains dashed entries.
+- E2E verified: unit checks — weekly Mon/Wed/Fri stepping (due Sun → next Mon; completed late Wed → same-day evening slot per strict after-now rule; Oct projections = 13 slots first Fri 2nd last Fri 30th), monthly day 15 → 15 Oct, AFTER_N=4 → exactly 3 projections, aborted excluded; UI — created "Publish weekly sales bulletin" (Weekly, Mon+Wed+Fri via chips, due Mon 21 Sep 9:00 AM IST, assignee Amit) through the dialog with live preview "Repeats weekly on Mon, Wed & Fri"; DB persisted weekdays "1,3,5" + interval 1; completing occurrence 1 as Amit spawned occurrence 2 due **Wed 23 Sep 9:00 AM IST** (the next selected repeat day) with full RECURRENCE history; calendar shows hollow repeat dots on every Mon/Wed/Fri including October, Wed agenda lists the real pending occurrence 2 card + dashed "upcoming repeats" cards; detail dialog shows "Repeats weekly on Mon, Wed & Fri · no end date" + occurrence history; mobile 390 scrollWidth clean; zero console/page errors; lint clean.
+- Demo state: "Publish weekly sales bulletin" series live (occurrence 2 pending, due Wed 23 Sep 9:00 AM IST, Amit) with the whole Mon/Wed/Fri schedule previewed on the calendar; existing Task-14 series (daily standups, weekly ops review) now also project forward.
+
+Stage Summary:
+- Shipped: recurring tasks now support repeat-day selection — Weekly gains a Mon–Sun multi-select ("Repeats weekly on Mon, Wed & Fri"; series then runs every week on those days) and Monthly gains an explicit day-of-month ("Repeats monthly on day 15"); the spawn mechanism honors the picked days (next occurrence always lands on the next selected day, at the original time) and the My Tasks calendar previews the entire upcoming schedule with dashed "Upcoming repeat" cards + hollow month dots, including across month boundaries, while each real copy still materializes only when its predecessor is completed.
+- Confirmed the underlying completion→spawn engine was already functional; the "not working" impression came from the missing repeat-day control and the invisible schedule, both addressed. Old series without picked days keep their previous every-N behavior unchanged.
+
+---
+Task ID: 17
+Agent: Z.ai Code (main)
+Task: "Give admin option for bulk ID creation. Admin should get option to download template excel file. then by filling employee details admin will upload filled file. ID should be created."
+
+Work Log:
+- Template: scripts/make-employee-template.py (openpyxl, brand #2E4566) generates public/employee-upload-template.xlsx — "Employees" sheet (styled header row, frozen pane, 40 pre-drawn entry rows, amber italic EXAMPLE row) + "Instructions" sheet (how-to steps, column reference table with required flags, good-to-know notes incl. default password + 500-row cap). Verified by re-parsing with SheetJS (headers map cleanly, EXAMPLE row lands as data row 2).
+- API POST /api/users/bulk (admin-only, mirrors single-create semantics): multipart FormData upload (xlsx/xls/csv, ≤2 MB); prefers the "Employees" sheet; header keys normalized (case/punctuation-insensitive) so template edits don't break parsing; required-column check with explicit missing-column error. Per-row validation with Excel row numbers: required fields, email format, duplicate Employee Code/Email within file AND against DB (single pre-fetch), self-manager + manager-email format checks; blank rows and the EXAMPLE row skipped; 500-row cap. Creation pass: one bcrypt hash of the default Digitide@123 reused, isFirstLogin/passwordPlain/role set exactly like single creation; L1 manager resolved by email from existing users OR rows created earlier in the same file (intra-file hierarchy links); per-row try/catch (P2002 → friendly duplicate message); retroactive updateMany links pre-existing users that named a freshly created employee as their L1 manager. Response: {totalRows, createdCount, failedCount, results[{row, employeeCode, name, status, message, managerLinked}]} — valid rows are created even when other rows fail.
+- UI: new bulk-create-dialog.tsx (BulkCreateDialog) — Step 1 "Download the template" (<a download> straight from /public), Step 2 drag-&-drop / click-to-browse dropzone (.xlsx/.xls/.csv, 2 MB hint) with selected-file chip + remove, disabled-until-file "Upload & Create IDs" button, inline error box, results panel (created/failed summary banner + scrollable max-h-64 per-row list with green/red icons, row numbers, MANAGER LINKED chip, failure reasons), default-password reminder; state resets on open; success toast "{n} employee ID(s) created ✅"; onCreated reloads the All Users table. AdminPanel gained an "OR — Bulk Create via Excel" entry point under the single-create form.
+- Verified backend via curl (admin session): 5-row mixed file → 3 created (EMP101-103) + 2 failed (duplicate EMP001 code, bad email) with correct Excel row numbers; EMP101 linked to existing Priya, EMP102 linked to EMP101 from the SAME file, EMP103 managerId null; defaults Digitide@123/isFirstLogin/EMPLOYEE; EMP101 logs in with the default password (first-login flow intact); re-upload → 0 created / 5 failed; .txt → "Unsupported file type"; header-mangled workbook → missing-columns 400; employee session → 403; unauthenticated → 401.
+- Verified UI via Agent Browser (as ADMIN): button opens dialog; in-browser template download yields a valid workbook; file picker shows chip; upload shows busy state then results ("All done — 1 of 1…" green, "0 created · 1 failed" amber with per-row reason), toast fires, dialog state persists (window.__probe survived — no page reload), closing the dialog refreshes All Users with the new IDs. Mobile 390px: dialog lays out cleanly, no horizontal scroll.
+- Bonus pre-existing bug fixed: Admin tab had 612px horizontal scroll at 390px (All Users table min-w-[34rem] pushing the xl:grid-cols-5 grid track — grid items default min-width:auto); added min-w-0 to both Cards → document scrollWidth now exactly 390.
+- Cleanup: junk test rows EMP107/EMP108 deleted; realistic bulk-created demo users kept (EMP101 Karan Mehta → Priya, EMP102 Divya Joshi → Karan, EMP103 Rohit Sharma, EMP105 Meera Iyer → Karan, EMP106 Arjun Das, EMP109 Deepa Roy) — they also enrich the hierarchy/Team View demo. dev.log zero errors; lint clean.
+
+Stage Summary:
+- Shipped: admin bulk ID creation — "Bulk Create via Excel" in the Admin panel opens a two-step dialog (download the branded template → drag-and-drop the filled file). The API validates every row (required fields, email format, duplicate code/email vs file and DB, manager-email checks), creates all valid rows with the default password + first-login flow, auto-links L1 managers by email including managers defined in the same file, and reports per-row success/failure with Excel row numbers; the All Users table and toast update live.
+- Bonus: fixed Admin tab mobile horizontal overflow (min-w-0 on grid cards).
+- Demo state: six realistic bulk-created employees (EMP101-109 range) with a two-level intra-file hierarchy under Priya Nair; re-uploading any used file now demonstrates the duplicate-failure path.
+
+---
+Task ID: 18
+Agent: Z.ai Code (main)
+Task: "Update this tool name as Taskena. Keep logo as it is as of now."
+
+Work Log:
+- Renamed every user-facing occurrence of "Digitide TaskFlow" to "Taskena": browser tab title + SEO keywords (layout.tsx metadata → "Taskena — Team Task Manager"), login screen h1, app header brand line (subtitle "Team Task Manager" kept), sticky footer ("Taskena — one master task manager for every employee · Built with Z.ai"), first-login welcome toast ("Welcome to Taskena!"), Reports Excel export header row ("Taskena — Team Performance Report") and export filename (server route + client download → "Taskena-Report-YYYY-MM-DD.xlsx"), recurrence-bot actor name in activity history ('TaskFlow Recurrence' → 'Taskena Recurrence' — old history entries keep their original label and still render fine).
+- Regenerated public/employee-upload-template.xlsx via scripts/make-employee-template.py with Taskena branding (Instructions title "Taskena — Bulk Employee ID Creation", step 4 path "Taskena → Admin → Bulk Create via Excel", workbook title property); generator script updated so future regenerations stay consistent.
+- Deliberately NOT changed (not tool branding): the default password Digitide@123 (auth convention referenced across login/admin/bulk flows), demo @digitide.com email addresses, the AUTH_SECRET fallback string and 'taskflow_session' cookie name (changing either would invalidate every live session), and the ClipboardList gradient logo icon which stays exactly as it was per the request.
+- Verified via Agent Browser: login page shows Taskena + unchanged logo; after ADMIN sign-in the header brand, footer, and document.title all read Taskena; All Users table and admin panel unaffected; Reports export downloaded and Content-Disposition confirms filename "Taskena-Report-2026-09-20.xlsx"; desktop 1280px layout intact; dev.log zero errors; lint clean.
+
+Stage Summary:
+- Shipped: full product rename to "Taskena" across UI (login, header, footer, toasts), metadata, Excel exports (Reports header + filenames), recurrence activity actor, and the bulk-upload template — logo untouched as requested. Internal identifiers (cookie name, secret fallback, default password, demo emails) intentionally preserved to avoid auth/demo-data breakage.
+
+---
+Task ID: 10
+Agent: Z.ai Code (main)
+Task: Replace user-facing "AI Priority" branding with a non-AI name (user doesn't want to present the app as an AI tool)
+
+Work Log:
+- Renamed src/components/task-manager/ai-priority-panel.tsx → smart-priority-panel.tsx and component AiPriorityPanel → SmartPriorityPanel
+- Panel heading "AI Priority" → "Smart Priority" (subtitle "— what to work on first" unchanged)
+- Button "Re-analyze"/"Analyzing…" → "Refresh"/"Updating…" (removed AI flavor); internal handler reanalyze → refresh
+- Fallback notice "AI is unavailable right now — showing smart deadline-based order." → "Live ordering is unavailable right now — showing deadline-based order."
+- Updated import + comment in home-view.tsx; internal API field source:'ai'|'fallback' left as-is (not user-facing, avoids API contract change)
+- Grep confirmed zero remaining user-facing AI mentions in src; lint clean
+
+Stage Summary:
+- Feature now presents as "Smart Priority — what to work on first" with a Refresh button; no AI claims anywhere in the UI
+- Verified via Agent Browser as Rahul (EMP002): heading renders, Refresh re-fetches plan (200), ranked list + Delayed-by chips + reasons intact, mobile 390px no overflow (scrollWidth 390), zero console/page errors, dev.log clean after transient mid-rename 500
+
+---
+Task ID: 11
+Agent: Z.ai Code (main)
+Task: Rebrand "Taskena" → "Tasknet"
+
+Work Log:
+- sed-replaced "Taskena" → "Tasknet" across 7 files: layout.tsx (metadata title + keywords), login-view.tsx (h1), app.tsx (header brand, footer tagline, welcome toast), reports-view.tsx (client export filename), api/reports/export/route.ts (xlsx report title + filename), lib/recurring-server.ts (actorName 'Tasknet Recurrence' ×3), scripts/make-employee-template.py (bulk-upload template texts)
+- public/logo.svg has no brand text — logo icon untouched (per earlier instruction); no favicon/manifest brand refs; public xlsx template contains no brand string
+- rg confirmed zero "Taskena" leftovers in src/scripts/public; lint clean
+
+Stage Summary:
+- App fully branded "Tasknet": browser tab title "Tasknet — Team Task Manager", login heading, header brand block, footer "Tasknet — one master task manager for every employee · Built with Z.ai", report exports "Tasknet-Report-*.xlsx"
+- Verified via Agent Browser as Rahul (EMP002): login h1, header, footer text all "Tasknet"; screenshot confirms logo icon intact; API 200s, zero page errors
