@@ -1,0 +1,20 @@
+node_modules
+.next
+out
+build
+.git
+.gitignore
+*.log
+dev.log
+server.log
+*.tsbuildinfo
+next-env.d.ts
+
+# Env is injected via Docker build args / runtime -e, never baked from the
+# working copy (.env is gitignored too).
+.env
+.env.*
+!.env.example
+
+*.tar.gz
+.dockerignore
