@@ -222,7 +222,7 @@ export function TaskManagerApp() {
       {/* Footer — sticky to bottom via flex column + mt-auto */}
       <footer className="mt-auto border-t border-slate-200/70 bg-white/70 py-4">
         <p className="text-center text-xs text-slate-400">
-          Tasknet — one master task manager for every employee · Built with Z.ai
+          Tasknet — one master task manager for every employee · Built by Avinash Wadkar
         </p>
       </footer>
 
