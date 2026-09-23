@@ -77,6 +77,18 @@ if [ -f "./next-service-dist/server.js" ]; then
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
     export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
 
+    # Z.ai API credentials for live AI task prioritization. Override them in the
+    # runtime environment if needed; the API key is intentionally NOT hardcoded
+    # here, so without it the panel falls back to deadline ordering.
+    export ZAI_BASE_URL="${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4}"
+    export ZAI_MODEL="${ZAI_MODEL:-glm-4.5-flash}"
+    export ZAI_API_KEY="${ZAI_API_KEY:-}"
+    if [ -n "$ZAI_API_KEY" ]; then
+        echo "🤖 已启用 Z.ai AI 任务优先级排序 (模型: $ZAI_MODEL)"
+    else
+        echo "⚠️  未设置 ZAI_API_KEY，AI 任务优先级排序不可用，将使用截止日期回退排序"
+    fi
+
     if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
         if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
             echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"

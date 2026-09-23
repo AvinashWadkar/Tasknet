@@ -52,6 +52,19 @@ ENV DATABASE_URL="file:/app/db/custom.db"
 ARG AUTH_SECRET="digitide-taskflow-secret-key-2024-zai"
 ENV AUTH_SECRET=$AUTH_SECRET
 
+# Z.ai API credentials for live AI task prioritization. Pass the API key at
+# build (--build-arg ZAI_API_KEY=...) or at run (-e ZAI_API_KEY=...). The key
+# is intentionally NOT hardcoded here; without it the panel falls back to
+# deadline ordering.
+ARG ZAI_BASE_URL="https://api.z.ai/api/paas/v4"
+ENV ZAI_BASE_URL=$ZAI_BASE_URL
+
+ARG ZAI_MODEL="glm-4.5-flash"
+ENV ZAI_MODEL=$ZAI_MODEL
+
+ARG ZAI_API_KEY=""
+ENV ZAI_API_KEY=$ZAI_API_KEY
+
 # Non-root user.
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
