@@ -1,0 +1,225 @@
+import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { getSessionUser } from '@/lib/auth'
+import { delayLabel, fmtDate, fmtTime, istToday } from '@/lib/dates'
+
+/**
+ * POST /api/tasks/prioritize
+ * AI prioritizes the signed-in user's open tasks ("every assigned task needs to be completed").
+ * Falls back to a deadline-based heuristic order if the AI call fails or times out.
+ * Result is cached in memory for 60s per user; body { refresh: true } bypasses the cache.
+ */
+
+const CACHE_TTL_MS = 60_000
+const AI_TIMEOUT_MS = 22_000
+
+type PlanStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | null
+
+interface PlanItem {
+  id: string
+  title: string
+  reason: string
+  dueDate: string
+  myStatus: PlanStatus
+  overdue: boolean
+  delayed: string
+  role: 'assignee' | 'creator'
+  done: number
+  total: number
+}
+
+interface WorkItem extends PlanItem {
+  dueDay: string
+}
+
+const cache = new Map<string, { ts: number; source: 'ai' | 'fallback'; plan: PlanItem[] }>()
+
+function strip(t: WorkItem): PlanItem {
+  return {
+    id: t.id,
+    title: t.title,
+    reason: t.reason,
+    dueDate: t.dueDate,
+    myStatus: t.myStatus,
+    overdue: t.overdue,
+    delayed: t.delayed,
+    role: t.role,
+    done: t.done,
+    total: t.total,
+  }
+}
+
+function fallbackReason(t: {
+  overdue: boolean
+  delayed: string
+  dueDate: Date
+  dueDay: string
+  today: string
+  myStatus: PlanStatus
+}): string {
+  if (t.overdue) return `Overdue by ${t.delayed} — close this first`
+  if (t.dueDay === t.today) return `Due today at ${fmtTime(t.dueDate)} IST`
+  if (t.myStatus === 'IN_PROGRESS') return 'Already in progress — finish before starting new work'
+  return `Due ${fmtDate(t.dueDate)} — plan ahead`
+}
+
+function fallbackRank(t: WorkItem): number {
+  if (t.overdue) return 0
+  if (t.dueDay === t.today) return 1
+  if (t.myStatus === 'IN_PROGRESS') return 2
+  return 3
+}
+
+function fallbackOrder(items: WorkItem[]): PlanItem[] {
+  return [...items]
+    .sort((a, b) => fallbackRank(a) - fallbackRank(b) || a.dueDate.localeCompare(b.dueDate))
+    .map(strip)
+}
+
+export async function POST(req: Request) {
+  const session = await getSessionUser()
+  if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  let refresh = false
+  try {
+    const body = await req.json()
+    refresh = Boolean(body?.refresh)
+  } catch {
+    /* no body — fine */
+  }
+
+  if (!refresh) {
+    const hit = cache.get(session.id)
+    if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
+      return NextResponse.json({ source: hit.source, plan: hit.plan, cached: true })
+    }
+  }
+
+  const today = istToday()
+  const now = new Date()
+
+  // All my active tasks (created by me or assigned to me), soonest due first
+  const tasks = await db.task.findMany({
+    where: {
+      status: 'ACTIVE',
+      OR: [{ createdById: session.id }, { assignments: { some: { userId: session.id } } }],
+    },
+    include: {
+      creator: { select: { id: true, name: true } },
+      assignments: { select: { userId: true, status: true } },
+    },
+    orderBy: { dueDate: 'asc' },
+    take: 100,
+  })
+
+  // Open work = my assignment not completed; tasks I only created need follow-up until everyone completes
+  const items: WorkItem[] = []
+  for (const t of tasks) {
+    const mine = t.assignments.find((a) => a.userId === session.id)
+    if (mine && mine.status === 'COMPLETED') continue // my part is done — nothing to prioritize
+    const done = t.assignments.filter((a) => a.status === 'COMPLETED').length
+    const total = t.assignments.length
+    if (!mine && done >= total) continue // creator-only task fully closed by assignees
+
+    const due = new Date(t.dueDate)
+    const overdue = due < now
+    const dueDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(due)
+    items.push({
+      id: t.id,
+      title: t.title,
+      reason: '',
+      dueDate: due.toISOString(),
+      myStatus: (mine?.status as PlanStatus) ?? null,
+      overdue,
+      delayed: delayLabel(due, now),
+      role: mine ? 'assignee' : 'creator',
+      done,
+      total,
+      dueDay,
+    })
+  }
+
+  if (items.length === 0) {
+    cache.set(session.id, { ts: Date.now(), source: 'ai', plan: [] })
+    return NextResponse.json({ source: 'ai', plan: [] })
+  }
+
+  const llmPayload = items.map((t) => ({
+    id: t.id,
+    title: t.title,
+    due: t.overdue
+      ? `overdue by ${t.delayed} (was due ${fmtDate(t.dueDate)}, ${fmtTime(t.dueDate)} IST)`
+      : t.dueDay === today
+        ? `due TODAY at ${fmtTime(t.dueDate)} IST`
+        : `due ${fmtDate(t.dueDate)}, ${fmtTime(t.dueDate)} IST`,
+    myStatus: t.myStatus ?? (t.role === 'creator' ? 'creator-follow-up' : 'PENDING'),
+    sharedWith: t.total > 1 ? `${t.done}/${t.total} employees completed` : 'only me',
+  }))
+
+  let source: 'ai' | 'fallback' = 'fallback'
+  let ordered: PlanItem[] = []
+
+  try {
+    const { default: ZAI } = await import('z-ai-web-dev-sdk')
+    const zai = await ZAI.create()
+    const sys =
+      "You are a strict work-prioritization assistant inside a task manager. The goal: EVERY assigned task must be completed. " +
+      "Rank the user's open tasks by execution priority. Rules: overdue tasks first (most delayed / most critical first), " +
+      'then tasks due today, then in-progress work close to done, then upcoming by deadline. ' +
+      'Tasks with myStatus "creator-follow-up" were created by the user for others — they still need chasing, rank them sensibly. ' +
+      "Each reason must stay consistent with the given due/overdue facts — never invent a different deadline than provided. " +
+      'Respond with STRICT JSON only, no markdown fences, no extra text: ' +
+      '{"order":[{"id":"<task id>","reason":"<max 90 chars, concrete, mention deadline/delay/momentum>"}]} ' +
+      'including EVERY task id exactly once, most important first.'
+    const userContent = `Today is ${today} (IST). Prioritize these ${llmPayload.length} open tasks:\n${JSON.stringify(llmPayload)}`
+
+    const completion = (await Promise.race([
+      zai.chat.completions.create({
+        messages: [
+          { role: 'assistant', content: sys },
+          { role: 'user', content: userContent },
+        ],
+        thinking: { type: 'disabled' },
+      }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('AI timeout')), AI_TIMEOUT_MS)),
+    ])) as { choices?: { message?: { content?: string } }[] }
+
+    const raw = completion?.choices?.[0]?.message?.content || ''
+    const cleaned = raw.replace(/```json|```/g, '').trim()
+    const start = cleaned.indexOf('{')
+    const end = cleaned.lastIndexOf('}')
+    if (start !== -1 && end > start) {
+      const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
+        order?: { id?: string; reason?: string }[]
+      }
+      if (Array.isArray(parsed.order)) {
+        const byId = new Map(items.map((t) => [t.id, t]))
+        const seen = new Set<string>()
+        const out: WorkItem[] = []
+        for (const o of parsed.order) {
+          const id = String(o?.id || '')
+          const t = byId.get(id)
+          if (!t || seen.has(id)) continue
+          seen.add(id)
+          out.push({ ...t, reason: String(o?.reason || fallbackReason({ ...t, today })).slice(0, 140) })
+        }
+        // Any task the AI skipped is appended in deadline order
+        const rest = items
+          .filter((t) => !seen.has(t.id))
+          .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+          .map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) }))
+        ordered = [...out, ...rest].map(strip)
+        if (out.length > 0) source = 'ai'
+      }
+    }
+  } catch {
+    /* AI unavailable — heuristic below */
+  }
+
+  if (ordered.length === 0) {
+    ordered = fallbackOrder(items.map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) })))
+  }
+
+  cache.set(session.id, { ts: Date.now(), source, plan: ordered })
+  return NextResponse.json({ source, plan: ordered })
+}

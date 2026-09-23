@@ -1,0 +1,128 @@
+'use client'
+
+import { cn } from '@/lib/utils'
+import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
+import { recurrenceLabel } from '@/lib/recurring'
+import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, viewerStatus } from './shared'
+import type { Me, TaskDTO } from './types'
+import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat } from 'lucide-react'
+
+export function TaskCard({
+  task,
+  me,
+  onOpen,
+  onQuickStatus,
+  busy,
+}: {
+  task: TaskDTO
+  me: Me
+  onOpen: () => void
+  onQuickStatus?: (status: 'IN_PROGRESS' | 'COMPLETED') => void
+  busy?: boolean
+}) {
+  const mine = task.assignments.find((a) => a.userId === me.id)
+  const aborted = task.status === 'ABORTED'
+  const overdue = !aborted && mine && mine.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
+  const isToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date()) ===
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(task.dueDate))
+  const isCreator = task.creator.id === me.id
+  const canQuick = onQuickStatus && mine && mine.status !== 'COMPLETED' && !aborted
+
+  return (
+    <div
+      className={cn(
+        'group min-w-0 cursor-pointer rounded-xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md',
+        overdue ? 'border-red-200' : 'border-slate-200',
+        aborted && 'bg-slate-50/80 hover:border-slate-200 hover:shadow-sm',
+        busy && 'pointer-events-none opacity-60'
+      )}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onOpen()}
+      aria-label={`Task: ${task.title}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className={cn('truncate font-semibold', aborted ? 'text-slate-500' : 'text-slate-900 group-hover:text-brand-700')}>
+            {task.title}
+          </h3>
+          {task.description && <p className="mt-0.5 line-clamp-1 text-sm text-slate-500">{task.description}</p>}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {aborted ? (
+            <AbortedBadge />
+          ) : (
+            <>
+              <StatusBadge status={viewerStatus(task, me.id)} />
+              {overdue && <OverdueBadge />}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+        <span className="inline-flex items-center gap-1">
+          <CalendarClock className="h-3.5 w-3.5" />
+          {isToday && !overdue
+            ? `Today, ${fmtTime(task.dueDate)}`
+            : `${fmtDate(task.dueDate)}, ${fmtTime(task.dueDate)}`}
+        </span>
+        {overdue && (
+          <span className="inline-flex items-center gap-1 font-semibold text-red-600">
+            <AlarmClock className="h-3.5 w-3.5" />
+            Delayed by {delayLabel(task.dueDate)}
+          </span>
+        )}
+        {!aborted && mine?.status === 'COMPLETED' && mine.completedAt && (
+          <span className="inline-flex items-center gap-1 font-medium text-brand-700">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Completed on {fmtDate(mine.completedAt)}
+          </span>
+        )}
+        {task.recurring && recurrenceLabel(task) && (
+          <span className="inline-flex items-center gap-1 font-medium text-brand-600">
+            <Repeat className="h-3.5 w-3.5" aria-hidden="true" />
+            {recurrenceLabel(task)}
+          </span>
+        )}
+        <span className="inline-flex items-center gap-1">
+          <UserRound className="h-3.5 w-3.5" />
+          {isCreator ? 'Created by you' : `By ${task.creator.name}`}
+        </span>
+        <div className="flex items-center -space-x-1.5" title={task.assignments.map((a) => a.user.name).join(', ')}>
+          {task.assignments.slice(0, 4).map((a) => (
+            <InitialAvatar key={a.id} name={a.user.name} className="h-6 w-6 border-2 border-white text-[9px]" />
+          ))}
+          {task.assignments.length > 4 && (
+            <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[9px] font-semibold text-slate-600">
+              +{task.assignments.length - 4}
+            </div>
+          )}
+        </div>
+        {mine && task.assignments.length > 1 && (
+          <span className="text-slate-400">
+            {task.assignments.filter((a) => a.status === 'COMPLETED').length}/{task.assignments.length} done
+          </span>
+        )}
+      </div>
+
+      {canQuick && (
+        <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
+          <button
+            className="rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition hover:bg-violet-100"
+            onClick={() => onQuickStatus?.('IN_PROGRESS')}
+          >
+            ▶ Start working
+          </button>
+          <button
+            className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
+            onClick={() => onQuickStatus?.('COMPLETED')}
+          >
+            ✓ Mark done
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
