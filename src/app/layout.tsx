@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Digitide TaskFlow — Team Task Manager",
+  title: "Tasknet — Team Task Manager",
   description: "One master task manager for every employee: today's tasks, calendar view, multi-employee assignment, and manager hierarchy dashboards.",
-  keywords: ["task manager", "Digitide", "TaskFlow", "employee tasks", "hierarchy"],
+  keywords: ["task manager", "Tasknet", "employee tasks", "hierarchy"],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },

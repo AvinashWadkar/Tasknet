@@ -263,3 +263,104 @@ Work Log:
 Stage Summary:
 - Shipped: end-to-end recurring tasks — a "Recurring" checkbox in Create Task reveals Repeats (Daily/Weekly/Monthly), Every-N, and Ends (Never / On date / After N times); the mechanism materializes the next occurrence automatically the moment every assignee completes the current one (fresh Pending copies for the same team, cadence-anchored future due date, end conditions honored, duplicate-proof across reopen/re-complete, abort ends the series). Recurring tasks are labeled with a Repeat chip on home/my-task/team cards and full series info in the detail dialog + history.
 - Bonus: fixed pre-existing 390px horizontal overflow on the My Tasks calendar page (implicit auto grid track → grid-cols-1 + min-w-0).
+
+---
+Task ID: 15
+Agent: Z.ai Code (main)
+Task: "On home page task statistics I can see how many tasks are overdue and has other status. I want if I click on any of that card the popup should appear showing list view of those status tasks and if clicked on any task from that list then task info should appear."
+
+Work Log:
+- home-view.tsx: the four hero stat tiles (Overdue / Due Today / In Progress / Completed) are now real buttons — cursor-pointer + hover lift + focus-visible ring, aria-haspopup="dialog", title hint; zero-count tiles render disabled (un-clickable, skipped by keyboard). The stats useMemo was refactored so each status bucket list is the single source of truth for BOTH the tile number and its popup: overdue = assigned-active open past due (most delayed first), dueToday = due-today non-completed (same todays base as before, incl. creator-side tasks), inProgress, completed (newest completion first via assignment completedAt). Counts are now list lengths, so tile numbers and popup contents can never diverge; viewerStatus() is used for the effective status (also fixes creator-only due-today tasks with all assignees done being counted as open).
+- New stat-list-dialog.tsx (StatListDialog + StatTaskRow): centered Dialog with colored status icon + "{Label} Tasks" title + count pill + one-line description per bucket; scrollable task list (max-h-96 overflow-y-auto, thin scrollbar); each row is a button showing title, meta chips — red "Delayed by X" (AlarmClock) for overdue rows, "Due {date}, {time}" otherwise, "Completed on {date}" for completed rows — StatusBadge, brand "Repeats …" chip for recurring tasks (Task 14 carry-over), "By {creator.name}", hover chevron; footer hint "Click any task to view its full details." Clicking a row closes the list popup and opens the full TaskDetailDialog via onOpenTask (no nested-dialog edge cases).
+- Bonus pre-existing bug fixed: PATCH /api/tasks/[id] 500 "istDueDate is not defined" (missing import) — editing a task's due date from the UI had been broken; added the import to src/app/api/tasks/[id]/route.ts and verified the edit endpoint works.
+- Demo data seeded for Suresh via API (dueDate as {date,time} IST): "Resolve pending vendor payment escalations" (due 19 Sep 6 pm IST, pending → overdue) and "Prepare Q3 process audit checklist" (due 21 Sep 5 pm IST, moved to In Progress), giving the manager home a live 1/2/1/7 stat mix.
+- Verified via Agent Browser: API-derived expected buckets match tiles exactly — Rahul (EMP002): 1 overdue / 1 due today / 0 in progress (tile disabled) / 2 completed; Suresh (EMP005 manager): 1 / 2 / 1 / 7. Overdue popup lists the task with "Delayed by 3 hrs" chip + Pending badge + "By Priya Nair"; row click opens the full task detail dialog (desktop + mobile); Completed popup shows 2 (then 7) items newest-first ("Completed on 20 Sept 2026" before 16 Aug 2026) and the 7-item list scrolls within max-h-96 (scrollHeight > clientHeight confirmed); In Progress popup shows the corrected "Due 21 Sept 2026, 5:00 pm" row; keyboard focus + Enter on a tile opens its dialog; mobile 390px — dialog rows wrap, document scrollWidth stays 390, row click still opens detail; zero page/console errors; lint clean; dev.log clean.
+
+Stage Summary:
+- Shipped: home-page stat tiles are now drill-downs — click Overdue / Due Today / In Progress / Completed to open a popup listing exactly those tasks (same numbers as the tiles, single source of truth), and click any task in the list to open its full task info dialog. Zero-count tiles are disabled; recurring tasks carry their "Repeats …" chip into the lists; completed lists are newest-first.
+- Bonus: fixed broken due-date editing (PATCH /api/tasks/[id] missing istDueDate import → 500) found during verification.
+- Demo state: Suresh's home now shows Overdue 1 / Due Today 2 / In Progress 1 / Completed 7 with two fresh tasks (vendor payment escalations overdue; Q3 audit checklist in progress).
+
+---
+Task ID: 16
+Agent: Z.ai Code (main)
+Task: "Recurring mechanism not working. Should get option to select repeat day and update in calendar as well accordingly."
+
+Work Log:
+- Diagnosis: the completion→spawn mechanism was NOT broken — an end-to-end API test (create daily recurring → assignee completes → occurrence #2 spawned next day 21:00 IST PENDING, same assignee, idempotency intact) and dev.log both confirmed it works. The real gaps were (1) no way to pick WHICH days a weekly task repeats on (it blindly stepped +7d from the due date) and (2) the calendar only ever showed the single current occurrence, so the recurring schedule was invisible — both now implemented.
+- Schema: Task += recurWeekdays String? (WEEKLY repeat days, comma-separated ISO weekday "1,3,5" = Mon,Wed,Fri) and recurMonthDay Int? (MONTHLY explicit day-of-month 1–31, clamped to month length); db:push + dev server restart.
+- src/lib/recurring.ts (rewritten, still client-safe): parseWeekdays/weekdaysToStr (canonical "1,3,5" codec), istWeekday (weekday derived from the IST calendar date — not UTC — to survive early-morning IST due times), weekdayListLabel ("Mon, Wed & Fri"), stepSlot (one cadence step honoring repeat days: next selected weekday strictly after the current date; monthly with explicit day via monthlyStep which builds the target month in IST parts and clamps to month length), nextDueDate now takes StepOptions {weekdays, monthDay} (when weekdays are picked the series repeats every week on those days — interval clamps to 1), recurrenceLabel gains "Repeats weekly on Mon, Wed & Fri" / "Repeats monthly on day 15", and projectOccurrences() projects future slots of an active series inside a day range ({day, at, occ}[] — slots strictly after today AND the current due date, AFTER_N/ON_DATE end conditions honored, cap 90).
+- recurring-server.ts: spawner passes {weekdays, monthDay} into nextDueDate and copies recurWeekdays/recurMonthDay onto the spawned occurrence.
+- POST /api/tasks: parses + sanitizes recurWeekdays (parseWeekdays→weekdaysToStr; forces interval=1 when days picked) and recurMonthDay (clamped 1–31, only for MONTHLY); RECURRENCE activity line uses the enriched label.
+- new-task-dialog.tsx: "REPEAT ON" weekday chip picker (Mon–Sun multi-select, aria-pressed) appears for Weekly; when ≥1 day is picked the "Every N weeks" row is replaced by "repeats every week on the selected days"; Monthly gains an optional "On day [1–31] of the month" input (empty = reuse the due date's day); a live "Schedule: …" preview line at the bottom of the options panel mirrors recurrenceLabel exactly; payload sends recurWeekdays/recurMonthDay (interval forced 1 for weekday sets).
+- calendar-view.tsx: fetch widened from month bounds to the full 6-week grid (edge weeks + cross-month projections now always available); projByDay useMemo projects every active recurring series in view via projectOccurrences; month cells render hollow brand-bordered dots for projected slots (after real dots, shared 3-dot budget with +N overflow counting both) and aria-labels mention "N upcoming repeats"; the day agenda appends an "UPCOMING REPEATS" section of dashed brand cards (Repeat icon, title, full recurrence label, slot time IST, "Occurrence #N — created automatically once the current one is completed") that are intentionally non-clickable since they are previews, not real tasks; agenda subtitle shows "· N upcoming repeats"; legend gains the hollow-dot "Upcoming repeat" item and the foot note explains dashed entries.
+- E2E verified: unit checks — weekly Mon/Wed/Fri stepping (due Sun → next Mon; completed late Wed → same-day evening slot per strict after-now rule; Oct projections = 13 slots first Fri 2nd last Fri 30th), monthly day 15 → 15 Oct, AFTER_N=4 → exactly 3 projections, aborted excluded; UI — created "Publish weekly sales bulletin" (Weekly, Mon+Wed+Fri via chips, due Mon 21 Sep 9:00 AM IST, assignee Amit) through the dialog with live preview "Repeats weekly on Mon, Wed & Fri"; DB persisted weekdays "1,3,5" + interval 1; completing occurrence 1 as Amit spawned occurrence 2 due **Wed 23 Sep 9:00 AM IST** (the next selected repeat day) with full RECURRENCE history; calendar shows hollow repeat dots on every Mon/Wed/Fri including October, Wed agenda lists the real pending occurrence 2 card + dashed "upcoming repeats" cards; detail dialog shows "Repeats weekly on Mon, Wed & Fri · no end date" + occurrence history; mobile 390 scrollWidth clean; zero console/page errors; lint clean.
+- Demo state: "Publish weekly sales bulletin" series live (occurrence 2 pending, due Wed 23 Sep 9:00 AM IST, Amit) with the whole Mon/Wed/Fri schedule previewed on the calendar; existing Task-14 series (daily standups, weekly ops review) now also project forward.
+
+Stage Summary:
+- Shipped: recurring tasks now support repeat-day selection — Weekly gains a Mon–Sun multi-select ("Repeats weekly on Mon, Wed & Fri"; series then runs every week on those days) and Monthly gains an explicit day-of-month ("Repeats monthly on day 15"); the spawn mechanism honors the picked days (next occurrence always lands on the next selected day, at the original time) and the My Tasks calendar previews the entire upcoming schedule with dashed "Upcoming repeat" cards + hollow month dots, including across month boundaries, while each real copy still materializes only when its predecessor is completed.
+- Confirmed the underlying completion→spawn engine was already functional; the "not working" impression came from the missing repeat-day control and the invisible schedule, both addressed. Old series without picked days keep their previous every-N behavior unchanged.
+
+---
+Task ID: 17
+Agent: Z.ai Code (main)
+Task: "Give admin option for bulk ID creation. Admin should get option to download template excel file. then by filling employee details admin will upload filled file. ID should be created."
+
+Work Log:
+- Template: scripts/make-employee-template.py (openpyxl, brand #2E4566) generates public/employee-upload-template.xlsx — "Employees" sheet (styled header row, frozen pane, 40 pre-drawn entry rows, amber italic EXAMPLE row) + "Instructions" sheet (how-to steps, column reference table with required flags, good-to-know notes incl. default password + 500-row cap). Verified by re-parsing with SheetJS (headers map cleanly, EXAMPLE row lands as data row 2).
+- API POST /api/users/bulk (admin-only, mirrors single-create semantics): multipart FormData upload (xlsx/xls/csv, ≤2 MB); prefers the "Employees" sheet; header keys normalized (case/punctuation-insensitive) so template edits don't break parsing; required-column check with explicit missing-column error. Per-row validation with Excel row numbers: required fields, email format, duplicate Employee Code/Email within file AND against DB (single pre-fetch), self-manager + manager-email format checks; blank rows and the EXAMPLE row skipped; 500-row cap. Creation pass: one bcrypt hash of the default Digitide@123 reused, isFirstLogin/passwordPlain/role set exactly like single creation; L1 manager resolved by email from existing users OR rows created earlier in the same file (intra-file hierarchy links); per-row try/catch (P2002 → friendly duplicate message); retroactive updateMany links pre-existing users that named a freshly created employee as their L1 manager. Response: {totalRows, createdCount, failedCount, results[{row, employeeCode, name, status, message, managerLinked}]} — valid rows are created even when other rows fail.
+- UI: new bulk-create-dialog.tsx (BulkCreateDialog) — Step 1 "Download the template" (<a download> straight from /public), Step 2 drag-&-drop / click-to-browse dropzone (.xlsx/.xls/.csv, 2 MB hint) with selected-file chip + remove, disabled-until-file "Upload & Create IDs" button, inline error box, results panel (created/failed summary banner + scrollable max-h-64 per-row list with green/red icons, row numbers, MANAGER LINKED chip, failure reasons), default-password reminder; state resets on open; success toast "{n} employee ID(s) created ✅"; onCreated reloads the All Users table. AdminPanel gained an "OR — Bulk Create via Excel" entry point under the single-create form.
+- Verified backend via curl (admin session): 5-row mixed file → 3 created (EMP101-103) + 2 failed (duplicate EMP001 code, bad email) with correct Excel row numbers; EMP101 linked to existing Priya, EMP102 linked to EMP101 from the SAME file, EMP103 managerId null; defaults Digitide@123/isFirstLogin/EMPLOYEE; EMP101 logs in with the default password (first-login flow intact); re-upload → 0 created / 5 failed; .txt → "Unsupported file type"; header-mangled workbook → missing-columns 400; employee session → 403; unauthenticated → 401.
+- Verified UI via Agent Browser (as ADMIN): button opens dialog; in-browser template download yields a valid workbook; file picker shows chip; upload shows busy state then results ("All done — 1 of 1…" green, "0 created · 1 failed" amber with per-row reason), toast fires, dialog state persists (window.__probe survived — no page reload), closing the dialog refreshes All Users with the new IDs. Mobile 390px: dialog lays out cleanly, no horizontal scroll.
+- Bonus pre-existing bug fixed: Admin tab had 612px horizontal scroll at 390px (All Users table min-w-[34rem] pushing the xl:grid-cols-5 grid track — grid items default min-width:auto); added min-w-0 to both Cards → document scrollWidth now exactly 390.
+- Cleanup: junk test rows EMP107/EMP108 deleted; realistic bulk-created demo users kept (EMP101 Karan Mehta → Priya, EMP102 Divya Joshi → Karan, EMP103 Rohit Sharma, EMP105 Meera Iyer → Karan, EMP106 Arjun Das, EMP109 Deepa Roy) — they also enrich the hierarchy/Team View demo. dev.log zero errors; lint clean.
+
+Stage Summary:
+- Shipped: admin bulk ID creation — "Bulk Create via Excel" in the Admin panel opens a two-step dialog (download the branded template → drag-and-drop the filled file). The API validates every row (required fields, email format, duplicate code/email vs file and DB, manager-email checks), creates all valid rows with the default password + first-login flow, auto-links L1 managers by email including managers defined in the same file, and reports per-row success/failure with Excel row numbers; the All Users table and toast update live.
+- Bonus: fixed Admin tab mobile horizontal overflow (min-w-0 on grid cards).
+- Demo state: six realistic bulk-created employees (EMP101-109 range) with a two-level intra-file hierarchy under Priya Nair; re-uploading any used file now demonstrates the duplicate-failure path.
+
+---
+Task ID: 18
+Agent: Z.ai Code (main)
+Task: "Update this tool name as Taskena. Keep logo as it is as of now."
+
+Work Log:
+- Renamed every user-facing occurrence of "Digitide TaskFlow" to "Taskena": browser tab title + SEO keywords (layout.tsx metadata → "Taskena — Team Task Manager"), login screen h1, app header brand line (subtitle "Team Task Manager" kept), sticky footer ("Taskena — one master task manager for every employee · Built with Z.ai"), first-login welcome toast ("Welcome to Taskena!"), Reports Excel export header row ("Taskena — Team Performance Report") and export filename (server route + client download → "Taskena-Report-YYYY-MM-DD.xlsx"), recurrence-bot actor name in activity history ('TaskFlow Recurrence' → 'Taskena Recurrence' — old history entries keep their original label and still render fine).
+- Regenerated public/employee-upload-template.xlsx via scripts/make-employee-template.py with Taskena branding (Instructions title "Taskena — Bulk Employee ID Creation", step 4 path "Taskena → Admin → Bulk Create via Excel", workbook title property); generator script updated so future regenerations stay consistent.
+- Deliberately NOT changed (not tool branding): the default password Digitide@123 (auth convention referenced across login/admin/bulk flows), demo @digitide.com email addresses, the AUTH_SECRET fallback string and 'taskflow_session' cookie name (changing either would invalidate every live session), and the ClipboardList gradient logo icon which stays exactly as it was per the request.
+- Verified via Agent Browser: login page shows Taskena + unchanged logo; after ADMIN sign-in the header brand, footer, and document.title all read Taskena; All Users table and admin panel unaffected; Reports export downloaded and Content-Disposition confirms filename "Taskena-Report-2026-09-20.xlsx"; desktop 1280px layout intact; dev.log zero errors; lint clean.
+
+Stage Summary:
+- Shipped: full product rename to "Taskena" across UI (login, header, footer, toasts), metadata, Excel exports (Reports header + filenames), recurrence activity actor, and the bulk-upload template — logo untouched as requested. Internal identifiers (cookie name, secret fallback, default password, demo emails) intentionally preserved to avoid auth/demo-data breakage.
+
+---
+Task ID: 10
+Agent: Z.ai Code (main)
+Task: Replace user-facing "AI Priority" branding with a non-AI name (user doesn't want to present the app as an AI tool)
+
+Work Log:
+- Renamed src/components/task-manager/ai-priority-panel.tsx → smart-priority-panel.tsx and component AiPriorityPanel → SmartPriorityPanel
+- Panel heading "AI Priority" → "Smart Priority" (subtitle "— what to work on first" unchanged)
+- Button "Re-analyze"/"Analyzing…" → "Refresh"/"Updating…" (removed AI flavor); internal handler reanalyze → refresh
+- Fallback notice "AI is unavailable right now — showing smart deadline-based order." → "Live ordering is unavailable right now — showing deadline-based order."
+- Updated import + comment in home-view.tsx; internal API field source:'ai'|'fallback' left as-is (not user-facing, avoids API contract change)
+- Grep confirmed zero remaining user-facing AI mentions in src; lint clean
+
+Stage Summary:
+- Feature now presents as "Smart Priority — what to work on first" with a Refresh button; no AI claims anywhere in the UI
+- Verified via Agent Browser as Rahul (EMP002): heading renders, Refresh re-fetches plan (200), ranked list + Delayed-by chips + reasons intact, mobile 390px no overflow (scrollWidth 390), zero console/page errors, dev.log clean after transient mid-rename 500
+
+---
+Task ID: 11
+Agent: Z.ai Code (main)
+Task: Rebrand "Taskena" → "Tasknet"
+
+Work Log:
+- sed-replaced "Taskena" → "Tasknet" across 7 files: layout.tsx (metadata title + keywords), login-view.tsx (h1), app.tsx (header brand, footer tagline, welcome toast), reports-view.tsx (client export filename), api/reports/export/route.ts (xlsx report title + filename), lib/recurring-server.ts (actorName 'Tasknet Recurrence' ×3), scripts/make-employee-template.py (bulk-upload template texts)
+- public/logo.svg has no brand text — logo icon untouched (per earlier instruction); no favicon/manifest brand refs; public xlsx template contains no brand string
+- rg confirmed zero "Taskena" leftovers in src/scripts/public; lint clean
+
+Stage Summary:
+- App fully branded "Tasknet": browser tab title "Tasknet — Team Task Manager", login heading, header brand block, footer "Tasknet — one master task manager for every employee · Built with Z.ai", report exports "Tasknet-Report-*.xlsx"
+- Verified via Agent Browser as Rahul (EMP002): login h1, header, footer text all "Tasknet"; screenshot confirms logo icon intact; API 200s, zero page errors

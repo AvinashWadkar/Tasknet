@@ -42,7 +42,7 @@ export function LoginView({ onLogin }: { onLogin: (me: Me) => void }) {
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-lg shadow-brand-200">
             <ClipboardList className="h-8 w-8" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Digitide TaskFlow</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Tasknet</h1>
           <p className="mt-2 text-sm text-slate-500">
             One master task manager for every employee — plan, assign, track, close.
           </p>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { istDayBounds, istDueDate, fmtDate } from '@/lib/dates'
-import { recurrenceLabel, type RecurFreq, type RecurEndType } from '@/lib/recurring'
+import { recurrenceLabel, parseWeekdays, weekdaysToStr, type RecurFreq, type RecurEndType } from '@/lib/recurring'
 
 const taskInclude = {
   creator: { select: { id: true, name: true, employeeCode: true, designation: true } },
@@ -131,6 +131,8 @@ export async function POST(req: NextRequest) {
     let recurEndType: RecurEndType | null = null
     let recurEndDate: Date | null = null
     let recurCount: number | null = null
+    let recurWeekdays: string | null = null
+    let recurMonthDay: number | null = null
     if (recurring) {
       if (!['DAILY', 'WEEKLY', 'MONTHLY'].includes(String(body.recurFreq))) {
         return NextResponse.json({ error: 'Choose how often the task repeats' }, { status: 400 })
@@ -155,6 +157,16 @@ export async function POST(req: NextRequest) {
         if (!Number.isFinite(recurCount) || recurCount < 2) {
           return NextResponse.json({ error: 'Occurrence count must be at least 2' }, { status: 400 })
         }
+      }
+      if (recurFreq === 'WEEKLY') {
+        // Selected repeat days (1=Mon..7=Sun): the series then runs every week on
+        // those days, so the every-N-weeks interval is clamped to 1
+        recurWeekdays = weekdaysToStr(parseWeekdays(typeof body.recurWeekdays === 'string' ? body.recurWeekdays : ''))
+        if (recurWeekdays) recurInterval = 1
+      }
+      if (recurFreq === 'MONTHLY' && body.recurMonthDay != null && body.recurMonthDay !== '') {
+        const md = Math.floor(Number(body.recurMonthDay))
+        if (Number.isFinite(md) && md >= 1 && md <= 31) recurMonthDay = md
       }
     }
 
@@ -183,7 +195,7 @@ export async function POST(req: NextRequest) {
         actorId: session.id,
         actorName: `${session.name} (${session.employeeCode})`,
         action: 'RECURRENCE',
-        detail: `Recurring series started — ${recurrenceLabel({ recurring: true, recurFreq, recurInterval })}${endNote}. The next occurrence is created automatically when every assignee completes this task.`,
+        detail: `Recurring series started — ${recurrenceLabel({ recurring: true, recurFreq, recurInterval, recurWeekdays, recurMonthDay })}${endNote}. The next occurrence is created automatically when every assignee completes this task.`,
       })
     }
 
@@ -199,6 +211,8 @@ export async function POST(req: NextRequest) {
         recurEndType: recurring ? recurEndType : null,
         recurEndDate,
         recurCount: recurring && recurEndType === 'AFTER_N' ? recurCount : null,
+        recurWeekdays: recurring ? recurWeekdays : null,
+        recurMonthDay: recurring ? recurMonthDay : null,
         assignments: {
           create: validUsers.map((u) => ({ userId: u.id })),
         },

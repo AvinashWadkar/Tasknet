@@ -64,6 +64,8 @@ model Task {
   recurCount      Int? // total occurrences for AFTER_N
   recurOccurrence Int       @default(1) // which occurrence of the series this task is
   rootTaskId      String? // id of the first task in the series (null on occurrence 1)
+  recurWeekdays   String? // WEEKLY repeat days, comma-separated ISO weekday 1=Mon..7=Sun e.g. "1,3,5"
+  recurMonthDay   Int? // MONTHLY day-of-month (1..31, clamped to month length)
 
   @@index([dueDate])
   @@index([createdById])

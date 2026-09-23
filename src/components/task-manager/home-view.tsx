@@ -6,11 +6,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
 import { TeamTaskCard } from './team-task-card'
-import { AiPriorityPanel } from './ai-priority-panel'
+import { SmartPriorityPanel } from './smart-priority-panel'
+import { StatListDialog, type StatKey, type StatBucket } from './stat-list-dialog'
 import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
 import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound } from 'lucide-react'
-import { initialsOf } from './shared'
+import { initialsOf, viewerStatus } from './shared'
 import { Button } from '@/components/ui/button'
 
 export function HomeView({
@@ -29,6 +30,8 @@ export function HomeView({
   const [tasks, setTasks] = useState<TaskDTO[] | null>(null)
   const [teamTasks, setTeamTasks] = useState<TaskDTO[] | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Which statistic tile's task list is open (null = closed)
+  const [statOpen, setStatOpen] = useState<StatKey | null>(null)
   // Managers (and ADMIN) get the extra "My Team Tasks for Today" list
   const showTeamList = me.isManager === true || me.role === 'ADMIN'
   const [greeting, setGreeting] = useState('Hello')
@@ -72,7 +75,7 @@ export function HomeView({
     }
   }, [refreshKey, showTeamList])
 
-  const { todayTasks, upcoming, stats } = useMemo(() => {
+  const { todayTasks, upcoming, stats, statLists } = useMemo(() => {
     const all = tasks || []
     const mine = all.filter((t) => t.assignments.some((a) => a.userId === me.id) || t.creator.id === me.id)
     const istDayOf = (iso: string) =>
@@ -117,20 +120,46 @@ export function HomeView({
     const assigned = mine.filter((t) => t.assignments.some((a) => a.userId === me.id))
     // Aborted tasks are cancelled work — excluded from all active stats
     const assignedActive = assigned.filter((t) => t.status !== 'ABORTED')
+    // Effective status from the viewer's perspective (own assignment, or team aggregate for creator-only tasks)
+    const myStatusOf = (t: TaskDTO) => viewerStatus(t, me.id)
+    const byDueAsc = (a: TaskDTO, b: TaskDTO) => a.dueDate.localeCompare(b.dueDate)
+    // Status buckets — each list is the single source of truth for both the tile count and its popup
+    const overdueList = assignedActive
+      .filter((t) => myStatusOf(t) !== 'COMPLETED' && new Date(t.dueDate) < now)
+      .sort(byDueAsc) // most delayed first
+    const dueTodayList = todays
+      .filter((t) => t.status !== 'ABORTED' && istDayOf(t.dueDate) === today && myStatusOf(t) !== 'COMPLETED')
+      .sort(byDueAsc)
+    const inProgressList = assignedActive
+      .filter((t) => myStatusOf(t) === 'IN_PROGRESS')
+      .sort(byDueAsc)
+    const completedList = assignedActive
+      .filter((t) => myStatusOf(t) === 'COMPLETED')
+      .sort((a, b) => {
+        const ca = a.assignments.find((x) => x.userId === me.id)?.completedAt
+        const cb = b.assignments.find((x) => x.userId === me.id)?.completedAt
+        if (ca && cb) return cb.localeCompare(ca) // newest completions first
+        if (ca) return -1
+        if (cb) return 1
+        return b.dueDate.localeCompare(a.dueDate)
+      })
     const stat = {
-      dueToday: todays.filter(
-        (t) =>
-          t.status !== 'ABORTED' &&
-          istDayOf(t.dueDate) === today &&
-          (t.assignments.find((a) => a.userId === me.id)?.status ?? 'PENDING') !== 'COMPLETED'
-      ).length,
-      inProgress: assignedActive.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'IN_PROGRESS').length,
-      completed: assignedActive.filter((t) => t.assignments.find((a) => a.userId === me.id)?.status === 'COMPLETED').length,
-      overdue: assignedActive.filter(
-        (t) => t.assignments.find((a) => a.userId === me.id)?.status !== 'COMPLETED' && new Date(t.dueDate) < now
-      ).length,
+      dueToday: dueTodayList.length,
+      inProgress: inProgressList.length,
+      completed: completedList.length,
+      overdue: overdueList.length,
     }
-    return { todayTasks: todays, upcoming, stats: stat }
+    return {
+      todayTasks: todays,
+      upcoming,
+      stats: stat,
+      statLists: {
+        overdue: overdueList,
+        dueToday: dueTodayList,
+        inProgress: inProgressList,
+        completed: completedList,
+      },
+    }
   }, [tasks, me, today])
 
   // Today's focus progress: how much of today's list (incl. rolled-forward overdue) is closed
@@ -198,8 +227,17 @@ export function HomeView({
   const TimeIcon = hour < 12 ? Sunrise : hour < 17 ? SunMedium : MoonStar
   const timeIconCls = hour < 17 ? 'text-amber-300' : 'text-brand-200'
 
-  const statTiles = [
+  const statTiles: {
+    key: StatKey
+    label: string
+    value: number
+    icon: typeof AlertTriangle
+    tile: string
+    iconWrap: string
+    alert: boolean
+  }[] = [
     {
+      key: 'overdue',
       label: 'Overdue',
       value: stats.overdue,
       icon: AlertTriangle,
@@ -211,6 +249,7 @@ export function HomeView({
       alert: stats.overdue > 0,
     },
     {
+      key: 'dueToday',
       label: 'Due Today',
       value: stats.dueToday,
       icon: CalendarCheck2,
@@ -219,6 +258,7 @@ export function HomeView({
       alert: false,
     },
     {
+      key: 'inProgress',
       label: 'In Progress',
       value: stats.inProgress,
       icon: Clock3,
@@ -227,6 +267,7 @@ export function HomeView({
       alert: false,
     },
     {
+      key: 'completed',
       label: 'Completed',
       value: stats.completed,
       icon: CheckCircle2,
@@ -235,6 +276,11 @@ export function HomeView({
       alert: false,
     },
   ]
+
+  const activeStat = statOpen ? statTiles.find((s) => s.key === statOpen) ?? null : null
+  const activeBucket: StatBucket | null = activeStat
+    ? { key: activeStat.key, label: activeStat.label, icon: activeStat.icon, tasks: statLists[activeStat.key] }
+    : null
 
   const myCardsCls = showTeamList ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 lg:grid-cols-2'
 
@@ -396,9 +442,18 @@ export function HomeView({
 
           <div role="group" aria-label="Task statistics" className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
             {statTiles.map((s) => (
-              <div
-                key={s.label}
-                className={`rounded-2xl p-4 ring-1 backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 ${s.tile}`}
+              <button
+                key={s.key}
+                type="button"
+                disabled={s.value === 0}
+                onClick={() => setStatOpen(s.key)}
+                aria-haspopup={s.value > 0 ? 'dialog' : undefined}
+                title={s.value > 0 ? `View ${s.label.toLowerCase()} tasks` : undefined}
+                className={`rounded-2xl p-4 text-left ring-1 backdrop-blur-sm transition-all duration-300 ${s.tile} ${
+                  s.value > 0
+                    ? 'cursor-pointer hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70'
+                    : 'cursor-default'
+                }`}
               >
                 <div className="flex items-center justify-between">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${s.iconWrap}`}>
@@ -413,7 +468,7 @@ export function HomeView({
                 </div>
                 <p className="mt-3 text-2xl font-bold tabular-nums tracking-tight text-white">{s.value}</p>
                 <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wider text-brand-100/70">{s.label}</p>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -440,8 +495,11 @@ export function HomeView({
         </div>
       </section>
 
-      {/* AI priority plan */}
-      <AiPriorityPanel me={me} refreshKey={refreshKey} onOpenTask={onOpenTask} />
+      {/* Statistic drill-down: click a stat tile → list of its tasks → click a task → full details */}
+      <StatListDialog bucket={activeBucket} me={me} onClose={() => setStatOpen(null)} onOpenTask={onOpenTask} />
+
+      {/* Smart priority plan */}
+      <SmartPriorityPanel me={me} refreshKey={refreshKey} onOpenTask={onOpenTask} />
 
       {/* Today's tasks — managers get their team's list side-by-side */}
       {showTeamList ? (

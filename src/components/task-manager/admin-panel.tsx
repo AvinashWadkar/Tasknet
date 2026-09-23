@@ -18,11 +18,12 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { api } from './api'
+import { BulkCreateDialog } from './bulk-create-dialog'
 import type { DirectoryUser } from './types'
 import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
-  Eye, EyeOff, Copy,
+  Eye, EyeOff, Copy, FileUp,
 } from 'lucide-react'
 
 const EMPTY = {
@@ -96,6 +97,9 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
   const [resetTarget, setResetTarget] = useState<DirectoryUser | null>(null)
   const [resetPw, setResetPw] = useState('Digitide@123')
   const [resetBusy, setResetBusy] = useState(false)
+
+  // Bulk-create-via-Excel dialog state
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   async function loadUsers() {
     try {
@@ -200,7 +204,7 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
 
       <div className="grid gap-4 xl:grid-cols-5">
         {/* Create user */}
-        <Card className="border-slate-200/80 shadow-sm xl:col-span-2">
+        <Card className="min-w-0 border-slate-200/80 shadow-sm xl:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <UserPlus className="h-4 w-4 text-brand-600" /> Create Employee ID
@@ -245,11 +249,31 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
                 </span>
               </p>
             </form>
+
+            <div className="relative my-4 text-center">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <span className="w-full border-t border-slate-200" />
+              </div>
+              <span className="relative bg-white px-2 text-xs font-medium uppercase tracking-wide text-slate-400">or</span>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full border-brand-200 text-brand-700 hover:bg-brand-50"
+              onClick={() => setBulkOpen(true)}
+            >
+              <FileUp className="mr-2 h-4 w-4" />
+              Bulk Create via Excel
+            </Button>
+            <p className="mt-2 text-center text-xs text-slate-500">
+              Download a template, fill in employee details and upload — IDs are created in one go.
+            </p>
           </CardContent>
         </Card>
 
         {/* Users list */}
-        <Card className="border-slate-200/80 shadow-sm xl:col-span-3">
+        <Card className="min-w-0 border-slate-200/80 shadow-sm xl:col-span-3">
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -345,6 +369,9 @@ export function AdminPanel({ refreshKey }: { refreshKey: number }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Bulk create via Excel */}
+      <BulkCreateDialog open={bulkOpen} onOpenChange={setBulkOpen} onCreated={loadUsers} />
 
       {/* Reset password confirmation */}
       <AlertDialog open={resetTarget !== null} onOpenChange={(o) => { if (!o) setResetTarget(null) }}>

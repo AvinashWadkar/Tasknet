@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { nextDueDate, seriesContinues, type RecurFreq } from './recurring'
+import { nextDueDate, seriesContinues, parseWeekdays, type RecurFreq } from './recurring'
 import { fmtDate, fmtTime } from './dates'
 
 /**
@@ -38,7 +38,9 @@ export async function maybeSpawnNextOccurrence(taskId: string): Promise<string |
 
   const freq = task.recurFreq as RecurFreq
   const interval = task.recurInterval ?? 1
-  const nextDue = nextDueDate(task.dueDate, freq, interval)
+  // Repeat-day aware cadence (weekly weekday set / monthly day-of-month)
+  const stepOpts = { weekdays: parseWeekdays(task.recurWeekdays), monthDay: task.recurMonthDay ?? null }
+  const nextDue = nextDueDate(task.dueDate, freq, interval, new Date(), stepOpts)
   if (
     !seriesContinues(
       {
@@ -68,18 +70,20 @@ export async function maybeSpawnNextOccurrence(taskId: string): Promise<string |
       recurCount: task.recurCount,
       recurOccurrence: nextOccurrence,
       rootTaskId: root,
+      recurWeekdays: task.recurWeekdays,
+      recurMonthDay: task.recurMonthDay,
       assignments: { create: task.assignments.map((a) => ({ userId: a.userId })) },
       activities: {
         create: [
           {
             actorId: task.createdById,
-            actorName: 'TaskFlow Recurrence',
+            actorName: 'Tasknet Recurrence',
             action: 'TASK_CREATED',
             detail: `Occurrence #${nextOccurrence} of this recurring series — auto-created when the previous occurrence was completed`,
           },
           {
             actorId: task.createdById,
-            actorName: 'TaskFlow Recurrence',
+            actorName: 'Tasknet Recurrence',
             action: 'ASSIGNED',
             detail: 'Assigned to the same employees as the previous occurrence',
           },
@@ -92,7 +96,7 @@ export async function maybeSpawnNextOccurrence(taskId: string): Promise<string |
     data: {
       taskId: task.id,
       actorId: task.createdById,
-      actorName: 'TaskFlow Recurrence',
+      actorName: 'Tasknet Recurrence',
       action: 'RECURRENCE',
       detail: `All assignees completed — occurrence #${nextOccurrence} scheduled for ${dueLabel}`,
     },

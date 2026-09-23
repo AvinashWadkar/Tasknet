@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
 import { viewerStatus } from './shared'
+import { projectOccurrences, recurrenceLabel, type ProjectedSlot } from '@/lib/recurring'
 import {
   WEEKDAY_LABELS,
   monthGridDates,
@@ -14,12 +15,12 @@ import {
   shiftMonth,
   istToday,
   isSameMonth,
-  istMonthBounds,
   fmtDate,
+  fmtTime,
 } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, ChevronRight, CalendarDays, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Plus, Repeat } from 'lucide-react'
 
 const DOT: Record<string, string> = {
   PENDING: 'bg-amber-400',
@@ -74,7 +75,11 @@ export function CalendarView({
 
   useEffect(() => {
     let alive = true
-    const { from, to } = istMonthBounds(monthCursor)
+    // Fetch over the full 6-week grid (not just the month) so edge-week tasks
+    // and cross-month recurring projections are always available
+    const g = monthGridDates(monthCursor)
+    const from = g[0]
+    const to = g[g.length - 1]
     api<{ tasks: TaskDTO[] }>(`/api/tasks?scope=range&from=${from}&to=${to}&filter=${filter}`)
       .then((r) => {
         if (!alive) return
@@ -105,7 +110,24 @@ export function CalendarView({
     return map
   }, [tasks, me.id])
 
+  // Upcoming occurrences of recurring series, projected per calendar day —
+  // each copy only materializes once its predecessor is completed, but the
+  // calendar previews the whole schedule ahead of time
+  const projByDay = useMemo(() => {
+    const map = new Map<string, { task: TaskDTO; slot: ProjectedSlot }[]>()
+    for (const t of tasks || []) {
+      if (!t.recurring || !t.recurFreq) continue
+      for (const slot of projectOccurrences(t, grid[0], grid[grid.length - 1], today)) {
+        const arr = map.get(slot.day) || []
+        arr.push({ task: t, slot })
+        map.set(slot.day, arr)
+      }
+    }
+    return map
+  }, [tasks, grid, today])
+
   const selectedTasks = byDay.get(selected) || []
+  const selectedProjections = projByDay.get(selected) || []
 
   return (
     <div className="space-y-4">
@@ -163,14 +185,18 @@ export function CalendarView({
               ))}
               {grid.map((d) => {
                 const dayTasks = byDay.get(d) || []
+                const dayProj = projByDay.get(d) || []
                 const inMonth = isSameMonth(d, monthCursor)
                 const isToday = d === today
                 const isSel = d === selected
+                const total = dayTasks.length + dayProj.length
+                const realShown = dayTasks.slice(0, 3)
+                const projShown = dayProj.slice(0, Math.max(0, 3 - realShown.length))
                 return (
                   <button
                     key={d}
                     onClick={() => setSelected(d)}
-                    aria-label={`${d}, ${dayTasks.length} tasks`}
+                    aria-label={`${d}, ${dayTasks.length} tasks${dayProj.length ? `, ${dayProj.length} upcoming repeat${dayProj.length === 1 ? '' : 's'}` : ''}`}
                     aria-selected={isSel}
                     role="gridcell"
                     className={cn(
@@ -190,13 +216,19 @@ export function CalendarView({
                       {Number(d.slice(8, 10))}
                     </span>
                     <div className="mt-0.5 flex h-1.5 items-center gap-0.5">
-                      {dayTasks.slice(0, 3).map((t) => {
+                      {realShown.map((t) => {
                         const st = dotStatus(t, me.id)
                         return <span key={t.id} className={cn('h-1.5 w-1.5 rounded-full', isSel ? 'bg-white/90' : DOT[st])} />
                       })}
-                      {dayTasks.length > 3 && (
+                      {projShown.map(({ task, slot }) => (
+                        <span
+                          key={`${task.id}-${slot.occ}`}
+                          className={cn('h-1.5 w-1.5 rounded-full border-[1.5px] bg-transparent', isSel ? 'border-white/90' : 'border-brand-500')}
+                        />
+                      ))}
+                      {total > 3 && (
                         <span className={cn('text-[8px] leading-none', isSel ? 'text-white/90' : 'text-slate-400')}>
-                          +{dayTasks.length - 3}
+                          +{total - 3}
                         </span>
                       )}
                     </div>
@@ -210,9 +242,11 @@ export function CalendarView({
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-500" /> In Progress</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" /> Completed</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-400" /> Aborted</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full border-[1.5px] border-brand-500 bg-transparent" /> Upcoming repeat</span>
             </div>
             <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
               Tasks you completed appear on the day you finished them — as the creator, you’ll see them under the due date you set.
+              Dashed entries preview when a recurring task will repeat; each copy is created automatically once the current one is completed.
             </p>
           </CardContent>
         </Card>
@@ -225,6 +259,8 @@ export function CalendarView({
                 <h3 className="font-semibold text-slate-900">{fmtDate(`${selected}T12:00:00+05:30`)}</h3>
                 <p className="text-xs text-slate-400">
                   {selectedTasks.length} task{selectedTasks.length === 1 ? '' : 's'} scheduled
+                  {selectedProjections.length > 0 &&
+                    ` · ${selectedProjections.length} upcoming repeat${selectedProjections.length === 1 ? '' : 's'}`}
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={() => onNewTask(selected)}>
@@ -237,7 +273,7 @@ export function CalendarView({
                 <Skeleton className="h-20 w-full rounded-xl" />
                 <Skeleton className="h-20 w-full rounded-xl" />
               </div>
-            ) : selectedTasks.length === 0 ? (
+            ) : selectedTasks.length === 0 && selectedProjections.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 py-10 text-center">
                 <CalendarDays className="h-8 w-8 text-slate-300" />
                 <p className="text-sm font-medium text-slate-600">Nothing scheduled</p>
@@ -248,6 +284,40 @@ export function CalendarView({
                 {selectedTasks.map((t) => (
                   <TaskCard key={t.id} task={t} me={me} onOpen={() => onOpenTask(t.id)} />
                 ))}
+                {selectedProjections.length > 0 && (
+                  <div>
+                    <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      <Repeat className="h-3 w-3" aria-hidden="true" /> Upcoming repeats
+                    </p>
+                    <div className="space-y-2">
+                      {selectedProjections.map(({ task, slot }) => (
+                        <div
+                          key={`${task.id}-${slot.occ}`}
+                          title="Auto-created when the current occurrence is completed"
+                          className="rounded-xl border border-dashed border-brand-300 bg-brand-50/40 p-3"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <span
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-100 text-brand-600"
+                              aria-hidden="true"
+                            >
+                              <Repeat className="h-3.5 w-3.5" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-slate-700">{task.title}</p>
+                              <p className="mt-0.5 text-xs text-slate-500">
+                                {recurrenceLabel(task)} · {fmtTime(slot.at)} IST
+                              </p>
+                              <p className="mt-1 text-[11px] text-brand-700/70">
+                                Occurrence #{slot.occ} — created automatically once the current one is completed
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
