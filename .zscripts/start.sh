@@ -82,6 +82,7 @@ if [ -f "./next-service-dist/server.js" ]; then
     # here, so without it the panel falls back to deadline ordering.
     export ZAI_BASE_URL="${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4}"
     export ZAI_MODEL="${ZAI_MODEL:-glm-4.5-flash}"
+    export ZAI_TIMEOUT_MS="${ZAI_TIMEOUT_MS:-60000}"
     export ZAI_API_KEY="${ZAI_API_KEY:-}"
     if [ -n "$ZAI_API_KEY" ]; then
         echo "🤖 已启用 Z.ai AI 任务优先级排序 (模型: $ZAI_MODEL)"

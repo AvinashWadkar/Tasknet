@@ -12,7 +12,7 @@ import { delayLabel, fmtDate, fmtTime, istToday } from '@/lib/dates'
  */
 
 const CACHE_TTL_MS = 60_000
-const AI_TIMEOUT_MS = 22_000
+const AI_TIMEOUT_MS = Number(process.env.ZAI_TIMEOUT_MS) || 60_000
 
 type PlanStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | null
 
