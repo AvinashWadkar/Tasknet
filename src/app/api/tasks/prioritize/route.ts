@@ -160,6 +160,7 @@ export async function POST(req: Request) {
   let source: 'ai' | 'fallback' = 'fallback'
   let ordered: PlanItem[] = []
   let aiError: string | undefined
+  const aiStart = Date.now()
 
   try {
     const baseUrl = (process.env.ZAI_BASE_URL || '').replace(/\/+$/, '')
@@ -229,7 +230,8 @@ export async function POST(req: Request) {
     if (out.length === 0) throw new Error(`Z.ai returned no order matching the open task ids: ${raw.slice(0, 200)}`)
     source = 'ai'
   } catch (e) {
-    aiError = e instanceof Error ? e.message : String(e)
+    const elapsed = Date.now() - aiStart
+    aiError = `${e instanceof Error ? e.message : String(e)} (after ${elapsed}ms)`
     console.warn('[prioritize] AI ordering unavailable, using deadline fallback:', aiError)
   }
 
