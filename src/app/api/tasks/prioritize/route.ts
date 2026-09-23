@@ -166,6 +166,25 @@ export async function POST(req: Request) {
     const baseUrl = (process.env.ZAI_BASE_URL || '').replace(/\/+$/, '')
     const apiKey = process.env.ZAI_API_KEY || ''
     if (!baseUrl || !apiKey) throw new Error('ZAI_BASE_URL / ZAI_API_KEY not configured')
+
+    // Quick connectivity probe — separates "server cannot reach Z.ai" from a slow model.
+    let probeStatus = 0
+    try {
+      const probe = await fetch(`${baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(8_000),
+      })
+      probeStatus = probe.status
+    } catch (e) {
+      throw new Error(
+        `Z.ai unreachable from this server (GET /models failed: ${
+          e instanceof Error ? e.message : String(e)
+        }, after ${Date.now() - aiStart}ms)`
+      )
+    }
+    if (probeStatus !== 200 && probeStatus !== 401 && probeStatus !== 403) {
+      throw new Error(`Z.ai unreachable from this server (GET /models → HTTP ${probeStatus}, after ${Date.now() - aiStart}ms)`)
+    }
     const sys =
       "You are a strict work-prioritization assistant inside a task manager. The goal: EVERY assigned task must be completed. " +
       "Rank the user's open tasks by execution priority. Rules: overdue tasks first (most delayed / most critical first), " +
