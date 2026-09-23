@@ -183,12 +183,11 @@ export async function POST(req: Request) {
         'X-Z-AI-From': 'Z',
       },
       body: JSON.stringify({
-        model: process.env.ZAI_MODEL || 'glm-5.3-flash',
+        model: process.env.ZAI_MODEL || 'glm-4.5-flash',
         messages: [
           { role: 'assistant', content: sys },
           { role: 'user', content: userContent },
         ],
-        thinking: { type: 'disabled' },
       }),
       signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     })
