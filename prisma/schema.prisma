@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// User: employee with org-hierarchy link (manager) + auth
+// ─────────────────────────────────────────────────────────────
+model User {
+  id            String   @id @default(cuid())
+  employeeCode  String   @unique
+  name          String
+  email         String   @unique
+  process       String
+  designation   String
+  password      String // bcrypt hash
+  passwordPlain String? // plaintext mirror of password — exposed to ADMIN only (for admin password visibility)
+  isFirstLogin  Boolean  @default(true)
+  role          String   @default("EMPLOYEE") // ADMIN | EMPLOYEE
+  managerName   String? // L1 manager name (as entered by admin)
+  managerEmail  String? // L1 manager email (as entered by admin)
+  managerId     String? // resolved link to manager User (by email match)
+  manager       User?    @relation("OrgTree", fields: [managerId], references: [id])
+  reports       User[]   @relation("OrgTree")
+  createdTasks  Task[]   @relation("TaskCreator")
+  assignments   TaskAssignment[]
+  activities    TaskActivity[]
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([managerId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task: created by one user, assignable to many users
+// ─────────────────────────────────────────────────────────────
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime
+  status      String   @default("ACTIVE") // ACTIVE | ABORTED (aborted by the creator)
+  abortedAt   DateTime?
+  abortReason String?
+  createdById String
+  creator     User     @relation("TaskCreator", fields: [createdById], references: [id])
+  assignments TaskAssignment[]
+  activities  TaskActivity[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Recurring series — the next occurrence is auto-created when every
+  // assignee completes this task (aborting ends the series)
+  recurring       Boolean   @default(false)
+  recurFreq       String? // DAILY | WEEKLY | MONTHLY
+  recurInterval   Int? // every N days/weeks/months (>= 1)
+  recurEndType    String? // NEVER | ON_DATE | AFTER_N
+  recurEndDate    DateTime? // inclusive end for ON_DATE
+  recurCount      Int? // total occurrences for AFTER_N
+  recurOccurrence Int       @default(1) // which occurrence of the series this task is
+  rootTaskId      String? // id of the first task in the series (null on occurrence 1)
+  recurWeekdays   String? // WEEKLY repeat days, comma-separated ISO weekday 1=Mon..7=Sun e.g. "1,3,5"
+  recurMonthDay   Int? // MONTHLY day-of-month (1..31, clamped to month length)
+
+  @@index([dueDate])
+  @@index([createdById])
+  @@index([rootTaskId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// TaskAssignment: per-employee status of a task
+// status: PENDING | IN_PROGRESS | COMPLETED
+// ─────────────────────────────────────────────────────────────
+model TaskAssignment {
+  id          String    @id @default(cuid())
+  taskId      String
+  userId      String
+  status      String    @default("PENDING")
+  completedAt DateTime?
+  note        String?
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([taskId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// TaskActivity: complete audit trail of a task with timestamps
+// action: TASK_CREATED | ASSIGNED | STATUS_UPDATED | COMMENT | TASK_UPDATED | REOPENED
+// ─────────────────────────────────────────────────────────────
+model TaskActivity {
+  id         String   @id @default(cuid())
+  taskId     String
+  actorId    String?
+  actorName  String
+  action     String
+  detail     String?
+  createdAt  DateTime @default(now())
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
