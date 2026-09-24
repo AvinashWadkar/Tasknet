@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description: "One master task manager for every employee: today's tasks, calendar view, multi-employee assignment, and manager hierarchy dashboards.",
   keywords: ["task manager", "Tasknet", "employee tasks", "hierarchy"],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/icon.png",
   },
 };
 
