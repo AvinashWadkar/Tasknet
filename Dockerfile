@@ -14,8 +14,10 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 # Generate the Prisma client before build so the tracing step picks it up.
+# Prisma generate only reads the schema — a placeholder URL is enough at build
+# time; the real Neon/DATABASE_URL is injected at run time (-e).
 COPY prisma ./prisma
-ENV DATABASE_URL="file:/app/db/custom.db"
+ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 RUN bunx prisma generate
 
 # Build the app (output: standalone).
@@ -27,12 +29,6 @@ RUN bun run build
 RUN cp -r .next/static .next/standalone/.next/ && \
     cp -r public .next/standalone/
 
-# Bundle the SQLite database (seeded) + schema into the standalone output so
-# the runtime image already contains the data and schema.
-RUN mkdir -p .next/standalone/db && \
-    cp db/custom.db .next/standalone/db/custom.db && \
-    cp -r prisma .next/standalone/prisma
-
 # ─────────────────────────────────────────────────────────────
 # Stage 2: runner — slim image with the standalone server + env.
 # ─────────────────────────────────────────────────────────────
@@ -43,7 +39,12 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-ENV DATABASE_URL="file:/app/db/custom.db"
+
+# DATABASE_URL (PostgreSQL/Neon) is REQUIRED at run time and is never baked
+# into the image:
+#   docker run -e DATABASE_URL="postgresql://..."
+ARG DATABASE_URL=""
+ENV DATABASE_URL=$DATABASE_URL
 
 # Build-time (ARG) → runtime (ENV) env passthrough. Override at build:
 #   docker build --build-arg AUTH_SECRET=... .
@@ -74,13 +75,6 @@ RUN addgroup --system --gid 1001 nodejs && \
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/standalone/.next/static ./.next/static
-
-# Copy the DB + schema explicitly (standalone tracing does not carry them).
-COPY --from=builder /app/.next/standalone/db/custom.db ./db/custom.db
-COPY --from=builder /app/.next/standalone/prisma ./prisma
-
-# SQLite needs write access to its db file at runtime.
-RUN chown -R nextjs:nodejs /app/db
 
 USER nextjs
 

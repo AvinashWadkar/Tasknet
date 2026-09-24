@@ -52,3 +52,5 @@ prompt
 server.log
 # Skills directory
 /skills/
+# SQLite (migrated to PostgreSQL/Neon)
+db/

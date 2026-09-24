@@ -53,9 +53,9 @@ cd "$BUILD_DIR" || exit 1
 
 ls -lah
 
-DEFAULT_PACKAGED_DB_PATH="/app/db/custom.db"
-DEFAULT_PACKAGED_DATABASE_URL="file:$DEFAULT_PACKAGED_DB_PATH"
-
+# DB 由外部 PostgreSQL (Neon) 提供，部署包不再内置 SQLite 文件。
+# DATABASE_URL 必须在运行环境中提供（如 Neon 的 postgresql://… 连接串）。
+# ─────────────────────────────────────────────────────────────
 # Python 依赖在构建阶段安装进部署产物，不复用 Sandbox 的 /home/z/.venv。
 # Next.js 及其启动的子进程都会继承这组路径。
 if [ -d "/app/python-runtime/site-packages" ]; then
@@ -75,7 +75,14 @@ if [ -f "./next-service-dist/server.js" ]; then
     export NODE_ENV=production
     export PORT="${PORT:-3000}"
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
+
+    # DATABASE_URL (PostgreSQL/Neon) 为必填
+    if [ -z "$DATABASE_URL" ] || [[ "$DATABASE_URL" != postgresql://* ]]; then
+        echo "❌ 未提供 PostgreSQL 数据库连接串（DATABASE_URL，如 postgresql://…Neon…）"
+        echo "   为避免生产环境启动到空数据库，启动已终止"
+        exit 1
+    fi
+    echo "🗄️  数据库: PostgreSQL ($(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@#postgresql://***@#'))"
 
     # Z.ai API credentials for live AI task prioritization. Override them in the
     # runtime environment if needed; the API key is intentionally NOT hardcoded
@@ -90,17 +97,8 @@ if [ -f "./next-service-dist/server.js" ]; then
         echo "⚠️  未设置 ZAI_API_KEY，AI 任务优先级排序不可用，将使用截止日期回退排序"
     fi
 
-    if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
-        if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
-            echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
-            echo "   为避免生产环境启动到空数据库，启动已终止"
-            exit 1
-        fi
-
-        echo "🗄️  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
-    else
-        echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
-    fi
+    # 数据库结构在部署构建阶段（database-runtime-build.sh）已同步到 PostgreSQL，
+    # 此处不再执行，避免在精简容器内下载 Prisma CLI。
     
     # 后台启动 Next.js
     bun server.js &

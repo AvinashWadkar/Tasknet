@@ -1,33 +1,26 @@
 #!/bin/bash
 
-set -euo pipefail
+set -u
 
 PROJECT_DIR="${PROJECT_DIR:-/home/z/my-project}"
-BUILD_DIR="${BUILD_DIR:?BUILD_DIR is required}"
-SOURCE_DB_DIR="$PROJECT_DIR/db"
-SOURCE_DB_PATH="$SOURCE_DB_DIR/custom.db"
-TARGET_DB_DIR="$BUILD_DIR/db"
-TARGET_DB_PATH="$TARGET_DB_DIR/custom.db"
+BUILD_DIR="${BUILD_DIR:-}"
+DATABASE_URL="${DATABASE_URL:-}"
 
-mkdir -p "$TARGET_DB_DIR"
-
-if [ -f "$SOURCE_DB_PATH" ]; then
-    echo "🗄️  复制 Preview 数据库到构建产物..."
-    cp -a "$SOURCE_DB_DIR/." "$TARGET_DB_DIR/"
-else
-    echo "ℹ️  未找到 Preview 数据库 db/custom.db，将初始化空的生产数据库"
+# The app runs on external PostgreSQL (Neon) — no SQLite file is bundled into
+# the deployment package anymore. This step keeps the target database schema in
+# sync with prisma/schema.prisma whenever DATABASE_URL points to Postgres.
+if [ -z "$DATABASE_URL" ] || [[ "$DATABASE_URL" != postgresql://* ]]; then
+    echo "ℹ️  未提供 PostgreSQL DATABASE_URL，跳过数据库结构同步（将由运行时/外部管理）"
+    exit 0
 fi
 
-echo "🗄️  同步构建产物中的数据库结构..."
-(
-    cd "$PROJECT_DIR"
-    DATABASE_URL="file:$TARGET_DB_PATH" bun run db:push
-)
+cd "$PROJECT_DIR" || exit 1
 
-if [ ! -f "$TARGET_DB_PATH" ]; then
-    echo "❌ 数据库初始化命令执行成功，但未生成 $TARGET_DB_PATH"
+echo "🗄️  同步数据库结构到 PostgreSQL ($(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@#postgresql://***@#'))..."
+
+if DATABASE_URL="$DATABASE_URL" bunx prisma db push --skip-generate --accept-data-loss; then
+    echo "✅ 数据库结构同步完成"
+else
+    echo "❌ 数据库结构同步失败；请检查 DATABASE_URL 与网络连通性"
     exit 1
 fi
-
-echo "✅ 构建产物数据库已准备完成"
-ls -lah "$TARGET_DB_DIR"
