@@ -208,7 +208,7 @@ export function TaskManagerApp() {
             onQuickStatus={onQuickStatusHome}
           />
         )}
-        {view === 'home' && me.role === 'ADMIN' && <AdminPanel refreshKey={refreshKey} />}
+        {view === 'home' && me.role === 'ADMIN' && <AdminPanel me={me} refreshKey={refreshKey} />}
         {view === 'calendar' && me.role !== 'ADMIN' && (
           <CalendarView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onNewTask={openNewTask} />
         )}
@@ -216,7 +216,7 @@ export function TaskManagerApp() {
         {view === 'reports' && (me.isManager || me.role === 'ADMIN') && (
           <ReportsView refreshKey={refreshKey} onOpenTask={setDetailTaskId} />
         )}
-        {view === 'admin' && me.role === 'ADMIN' && <AdminPanel refreshKey={refreshKey} />}
+        {view === 'admin' && me.role === 'ADMIN' && <AdminPanel me={me} refreshKey={refreshKey} />}
       </main>
 
       {/* Footer — sticky to bottom via flex column + mt-auto */}
