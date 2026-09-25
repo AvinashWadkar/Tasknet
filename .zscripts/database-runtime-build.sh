@@ -8,9 +8,13 @@ DATABASE_URL="${DATABASE_URL:-}"
 
 # The app runs on external PostgreSQL (Neon) — no SQLite file is bundled into
 # the deployment package anymore. This step keeps the target database schema in
-# sync with prisma/schema.prisma whenever DATABASE_URL points to Postgres.
-if [ -z "$DATABASE_URL" ] || [[ "$DATABASE_URL" != postgresql://* ]]; then
-    echo "ℹ️  未提供 PostgreSQL DATABASE_URL，跳过数据库结构同步（将由运行时/外部管理）"
+# sync with prisma/schema.prisma whenever a REAL Postgres DATABASE_URL is set.
+# The build-time placeholder URL in build.sh is intentionally skipped here so we
+# never try to db-push against a fake server.
+PLACEHOLDER_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
+
+if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "$PLACEHOLDER_URL" ] || [[ "$DATABASE_URL" != postgresql://* ]]; then
+    echo "ℹ️  未提供真实的 PostgreSQL DATABASE_URL，跳过数据库结构同步（部署包不再内置 SQLite）"
     exit 0
 fi
 

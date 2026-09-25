@@ -31,8 +31,13 @@ BUILD_DIR="/tmp/build_fullstack_$BUILD_ID"
 echo "📁 清理并创建构建目录: $BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# 安装依赖
+# 安装依赖。
+# @prisma/client 的 postinstall 会执行 `prisma generate`；若此时 DATABASE_URL 为空，
+# 该步骤会以 "You must provide a nonempty URL … resolved to an empty string" 报错并中断构建。
+# generate 只需要一个非空占位串（不连接数据库），真实 Neon 连接串在运行时环境提供。
+# 若平台已在构建环境设置了真实的 DATABASE_URL，则沿用该值，不会退回占位串。
 echo "📦 安装依赖..."
+export DATABASE_URL="${DATABASE_URL:-postgresql://placeholder:placeholder@localhost:5432/placeholder}"
 bun install
 
 # 构建 Next.js 应用
