@@ -126,7 +126,7 @@ export function TaskDetailDialog({
         method: 'POST',
         body: JSON.stringify({ status }),
       })
-      setTask((prev) => (prev ? { ...prev, assignments: res.task.assignments } : prev))
+      setTask(res.task)
       onChanged()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update status')
@@ -160,7 +160,7 @@ export function TaskDetailDialog({
         method: 'PATCH',
         body: JSON.stringify({ addAssigneeIds: [addSel] }),
       })
-      setTask((prev) => (prev ? { ...prev, assignments: res.task.assignments } : prev))
+      setTask(res.task)
       setAddSel(null)
       setAddUsers((prev) => prev.filter((u) => u.id !== addSel))
       onChanged()

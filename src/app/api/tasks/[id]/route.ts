@@ -3,24 +3,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { getDescendantIds } from '@/lib/hierarchy'
 import { istDueDate } from '@/lib/dates'
-
-const taskInclude = {
-  creator: { select: { id: true, name: true, employeeCode: true, designation: true } },
-  assignments: {
-    select: {
-      id: true,
-      userId: true,
-      status: true,
-      completedAt: true,
-      updatedAt: true,
-      user: { select: { id: true, name: true, employeeCode: true, designation: true, process: true } },
-    },
-  },
-  activities: {
-    orderBy: { createdAt: 'desc' as const },
-    select: { id: true, actorName: true, action: true, detail: true, createdAt: true },
-  },
-}
+import { taskInclude } from '@/lib/task-include'
 
 /**
  * GET /api/tasks/[id] — full detail incl. all assignees' statuses + complete history.

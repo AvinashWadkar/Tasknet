@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { fmtDate } from '@/lib/dates'
+import { taskInclude } from '@/lib/task-include'
 
 /**
  * POST /api/tasks/[id]/handoff — an assignee hands off THEIR part of a task to
@@ -98,23 +99,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   const updated = await db.task.findUnique({
     where: { id: task.id },
-    include: {
-      creator: { select: { id: true, name: true, employeeCode: true, designation: true } },
-      assignments: {
-        select: {
-          id: true,
-          userId: true,
-          status: true,
-          completedAt: true,
-          updatedAt: true,
-          user: { select: { id: true, name: true, employeeCode: true, designation: true, process: true } },
-        },
-      },
-      activities: {
-        orderBy: { createdAt: 'desc' as const },
-        select: { id: true, actorName: true, action: true, detail: true, createdAt: true },
-      },
-    },
+    include: taskInclude,
   })
   return NextResponse.json({ ok: true, task: updated, handedTo: { id: target.id, name: target.name } })
 }
