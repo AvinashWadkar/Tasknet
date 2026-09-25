@@ -27,11 +27,12 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { api } from './api'
 import { BulkCreateDialog } from './bulk-create-dialog'
+import { SendNotificationDialog } from './send-notification-dialog'
 import type { DirectoryUser, Me } from './types'
 import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
-  Eye, EyeOff, Copy, FileUp, Pencil, Trash2,
+  Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone,
 } from 'lucide-react'
 
 const EMPTY = {
@@ -177,6 +178,9 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
   // Bulk-create-via-Excel dialog state
   const [bulkOpen, setBulkOpen] = useState(false)
+
+  // Send-notification dialog state
+  const [sendOpen, setSendOpen] = useState(false)
 
   async function loadUsers() {
     try {
@@ -349,11 +353,16 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-          <ShieldCheck className="h-5 w-5 text-brand-600" /> Admin — User Management
-        </h2>
-        <p className="text-sm text-slate-500">Only you can create employee IDs. Hierarchy links automatically by L1 Manager Email.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+            <ShieldCheck className="h-5 w-5 text-brand-600" /> Admin — User Management
+          </h2>
+          <p className="text-sm text-slate-500">Only you can create employee IDs. Hierarchy links automatically by L1 Manager Email.</p>
+        </div>
+        <Button type="button" onClick={() => setSendOpen(true)} className="shrink-0">
+          <Megaphone className="mr-2 h-4 w-4" /> Send Notification
+        </Button>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-5">
@@ -572,6 +581,9 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
       {/* Bulk create via Excel */}
       <BulkCreateDialog open={bulkOpen} onOpenChange={setBulkOpen} onCreated={loadUsers} />
+
+      {/* Send a custom push / in-app notification */}
+      <SendNotificationDialog open={sendOpen} onOpenChange={setSendOpen} users={users ?? []} />
 
       {/* Reset password confirmation */}
       <AlertDialog open={resetTarget !== null} onOpenChange={(o) => { if (!o) setResetTarget(null) }}>
