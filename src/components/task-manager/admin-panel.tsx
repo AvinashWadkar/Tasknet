@@ -95,6 +95,63 @@ function PasswordCell({ password }: { password?: string | null }) {
   )
 }
 
+/** Edit / Delete / Reset-Password row actions shared by the table (md+) and mobile cards. */
+function RowActions({
+  user,
+  me,
+  onEdit,
+  onDelete,
+  onReset,
+}: {
+  user: DirectoryUser
+  me: Me
+  onEdit: (u: DirectoryUser) => void
+  onDelete: (u: DirectoryUser) => void
+  onReset: (u: DirectoryUser) => void
+}) {
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+        aria-label={`Edit ${user.name}`}
+        title="Edit user"
+        onClick={() => onEdit(user)}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+      {user.id !== me.id && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-slate-400 hover:bg-red-50 hover:text-red-600"
+          aria-label={`Delete ${user.name}`}
+          title="Delete user"
+          onClick={() => onDelete(user)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
+      {user.role !== 'ADMIN' && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+          aria-label={`Reset password for ${user.name}`}
+          title="Reset password"
+          onClick={() => onReset(user)}
+        >
+          <KeyRound className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </>
+  )
+}
+
 export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const { toast } = useToast()
   const [users, setUsers] = useState<DirectoryUser[] | null>(null)
@@ -371,7 +428,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
         {/* Users list */}
         <Card className="min-w-0 border-slate-200/80 shadow-sm xl:col-span-3">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Users2 className="h-4 w-4 text-brand-600" /> All Users
@@ -381,7 +438,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 Every employee ID in the system. Passwords are visible to you (admin) only.
               </CardDescription>
             </div>
-            <div className="relative w-56">
+            <div className="relative w-full sm:w-56">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
               <Input placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
@@ -394,100 +451,120 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 ))}
               </div>
             ) : (
-              <div className="max-h-[34rem] overflow-auto rounded-lg border border-slate-100 [scrollbar-width:thin]">
-                <table className="w-full min-w-[34rem] text-sm">
-                  <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2.5 font-semibold">Employee</th>
-                      <th className="px-3 py-2.5 font-semibold">Password</th>
-                      <th className="hidden px-3 py-2.5 font-semibold sm:table-cell">Process / Designation</th>
-                      <th className="hidden px-3 py-2.5 font-semibold md:table-cell">L1 Manager</th>
-                      <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Created</th>
-                      <th className="hidden px-3 py-2.5 text-right font-semibold md:table-cell">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filtered.map((u) => (
-                      <tr key={u.id} className="transition hover:bg-brand-50/40">
-                        <td className="px-3 py-2.5">
-                          <p className="font-medium text-slate-800">
-                            {u.name} {u.role === 'ADMIN' && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>}
+              <>
+                {/* Mobile / tablet: stacked user cards */}
+                <div className="space-y-2 md:hidden">
+                  {filtered.map((u) => (
+                    <div key={u.id} className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-1.5 font-medium text-slate-800">
+                            <span className="truncate">{u.name}</span>
+                            {u.role === 'ADMIN' && (
+                              <span className="shrink-0 rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>
+                            )}
                           </p>
                           <p className="break-all text-xs text-slate-500">{u.employeeCode} · {u.email}</p>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <PasswordCell password={u.password} />
-                        </td>
-                        <td className="hidden px-3 py-2.5 text-slate-600 sm:table-cell">
-                          <p>{u.process}</p>
-                          <p className="text-xs text-slate-400">{u.designation}</p>
-                        </td>
-                        <td className="hidden px-3 py-2.5 text-slate-600 md:table-cell">
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          <RowActions user={u} me={me} onEdit={openEdit} onDelete={askDelete} onReset={openReset} />
+                        </div>
+                      </div>
+
+                      <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2 text-xs text-slate-600">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Process / Designation</p>
+                          <p className="truncate">{u.process}</p>
+                          <p className="truncate text-slate-400">{u.designation}</p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">L1 Manager</p>
                           {u.managerName ? (
                             <>
-                              <p>{u.managerName}</p>
-                              <p className="break-all text-xs text-slate-400">{u.managerEmail}</p>
+                              <p className="truncate">{u.managerName}</p>
+                              <p className="truncate text-slate-400">{u.managerEmail}</p>
                             </>
                           ) : (
                             <span className="text-slate-300">—</span>
                           )}
-                        </td>
-                        <td className="hidden px-3 py-2.5 text-xs text-slate-500 lg:table-cell">
-                          {u.createdAt ? fmtDate(u.createdAt) : '—'}
-                        </td>
-                        <td className="hidden px-3 py-2.5 text-right md:table-cell">
-                          <div className="flex items-center justify-end gap-0.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-slate-400 hover:bg-brand-50 hover:text-brand-700"
-                              aria-label={`Edit ${u.name}`}
-                              title="Edit user"
-                              onClick={() => openEdit(u)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            {u.id !== me.id && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                                aria-label={`Delete ${u.name}`}
-                                title="Delete user"
-                                onClick={() => askDelete(u)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {u.role !== 'ADMIN' && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-slate-400 hover:bg-brand-50 hover:text-brand-700"
-                                aria-label={`Reset password for ${u.name}`}
-                                title="Reset password"
-                                onClick={() => openReset(u)}
-                              >
-                                <KeyRound className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filtered.length === 0 && (
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                        <PasswordCell password={u.password} />
+                        <span className="text-[10px] text-slate-400">
+                          Created {u.createdAt ? fmtDate(u.createdAt) : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {filtered.length === 0 && (
+                    <p className="rounded-lg border border-slate-100 px-3 py-8 text-center text-sm text-slate-400">
+                      No users match your search.
+                    </p>
+                  )}
+                </div>
+
+                {/* Desktop: wide table */}
+                <div className="hidden max-h-[34rem] overflow-auto rounded-lg border border-slate-100 [scrollbar-width:thin] md:block">
+                  <table className="w-full min-w-[34rem] text-sm">
+                    <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">
-                          No users match your search.
-                        </td>
+                        <th className="px-3 py-2.5 font-semibold">Employee</th>
+                        <th className="px-3 py-2.5 font-semibold">Password</th>
+                        <th className="hidden px-3 py-2.5 font-semibold sm:table-cell">Process / Designation</th>
+                        <th className="hidden px-3 py-2.5 font-semibold md:table-cell">L1 Manager</th>
+                        <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Created</th>
+                        <th className="hidden px-3 py-2.5 text-right font-semibold md:table-cell">Actions</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filtered.map((u) => (
+                        <tr key={u.id} className="transition hover:bg-brand-50/40">
+                          <td className="px-3 py-2.5">
+                            <p className="font-medium text-slate-800">
+                              {u.name} {u.role === 'ADMIN' && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>}
+                            </p>
+                            <p className="break-all text-xs text-slate-500">{u.employeeCode} · {u.email}</p>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <PasswordCell password={u.password} />
+                          </td>
+                          <td className="hidden px-3 py-2.5 text-slate-600 sm:table-cell">
+                            <p>{u.process}</p>
+                            <p className="text-xs text-slate-400">{u.designation}</p>
+                          </td>
+                          <td className="hidden px-3 py-2.5 text-slate-600 md:table-cell">
+                            {u.managerName ? (
+                              <>
+                                <p>{u.managerName}</p>
+                                <p className="break-all text-xs text-slate-400">{u.managerEmail}</p>
+                              </>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                          <td className="hidden px-3 py-2.5 text-xs text-slate-500 lg:table-cell">
+                            {u.createdAt ? fmtDate(u.createdAt) : '—'}
+                          </td>
+                          <td className="hidden px-3 py-2.5 text-right md:table-cell">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <RowActions user={u} me={me} onEdit={openEdit} onDelete={askDelete} onReset={openReset} />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filtered.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">
+                            No users match your search.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
