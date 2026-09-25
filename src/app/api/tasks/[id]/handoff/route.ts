@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { fmtDate } from '@/lib/dates'
 
 /**
  * POST /api/tasks/[id]/handoff — an assignee hands off THEIR part of a task to
@@ -78,6 +79,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
           actorName: `${session.name} (${session.employeeCode})`,
           action: 'TASK_HANDOFF',
           detail: `Handed off their part to ${target.name} (${target.employeeCode}) for further completion${note ? ` — "${note}"` : ''}`,
+        },
+      }),
+      db.notification.create({
+        data: {
+          userId: toUserId,
+          taskId: task.id,
+          type: 'TASK_HANDED',
+          title: 'A task was handed to you',
+          message: `${session.name} handed you "${task.title}" (due ${fmtDate(task.dueDate)}).${note ? ` Note: "${note}"` : ''}`,
         },
       }),
     ])

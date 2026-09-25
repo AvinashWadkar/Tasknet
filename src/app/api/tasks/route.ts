@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { istDayBounds, istDueDate, fmtDate } from '@/lib/dates'
+import { notifyAssignees } from '@/lib/notify'
 import { recurrenceLabel, parseWeekdays, weekdaysToStr, type RecurFreq, type RecurEndType } from '@/lib/recurring'
 
 const taskInclude = {
@@ -221,6 +222,15 @@ export async function POST(req: NextRequest) {
         },
       },
       include: taskInclude,
+    })
+
+    // Notify every assignee (except the creator, who already knows).
+    await notifyAssignees({
+      taskId: task.id,
+      recipientIds: validUsers.map((u) => u.id),
+      excludeIds: [session.id],
+      title: 'New task assigned to you',
+      message: `${session.name} assigned you "${task.title}" — due ${fmtDate(task.dueDate)}${recurring ? ' (recurring)' : ''}.`,
     })
 
     return NextResponse.json({ task })

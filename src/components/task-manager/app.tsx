@@ -19,6 +19,8 @@ import { CalendarView } from './calendar-view'
 import { TeamView } from './team-view'
 import { ReportsView } from './reports-view'
 import { AdminPanel } from './admin-panel'
+import { NotificationBell } from './notification-bell'
+import { NotificationGate } from './notification-gate'
 import { NewTaskDialog } from './new-task-dialog'
 import { TaskDetailDialog } from './task-detail-dialog'
 import { InitialAvatar } from './shared'
@@ -57,6 +59,7 @@ export function TaskManagerApp() {
   const [newTaskDate, setNewTaskDate] = useState<string | undefined>(undefined)
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
   const [navOpen, setNavOpen] = useState(false)
+  const [notifGateOpen, setNotifGateOpen] = useState(false)
 
   const loadMe = useCallback(async () => {
     try {
@@ -72,6 +75,16 @@ export function TaskManagerApp() {
   useEffect(() => {
     loadMe()
   }, [loadMe])
+
+  // On every login, re-check the browser notification permission.
+  // While it's not decided (default) or it's blocked (denied), force the gate.
+  useEffect(() => {
+    if (!me) return
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    if (Notification.permission === 'default' || Notification.permission === 'denied') {
+      setNotifGateOpen(true)
+    }
+  }, [me])
 
   const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
@@ -211,6 +224,7 @@ export function TaskManagerApp() {
                 <Plus className="mr-1.5 h-4 w-4" /> New Task
               </Button>
             )}
+            <NotificationBell onOpenTask={setDetailTaskId} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -314,6 +328,9 @@ export function TaskManagerApp() {
           onChanged={bumpRefresh}
         />
       )}
+
+      {/* Mandatory first-login notification gate (rendered behind the password modal) */}
+      {notifGateOpen && <NotificationGate open onDone={() => setNotifGateOpen(false)} />}
 
       {/* Mandatory first-login password modal */}
       {me.isFirstLogin && (

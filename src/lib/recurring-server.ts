@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { nextDueDate, seriesContinues, parseWeekdays, type RecurFreq } from './recurring'
 import { fmtDate, fmtTime } from './dates'
+import { notifyAssignees } from './notify'
 
 /**
  * Recurring-series spawner (server-only).
@@ -100,6 +101,15 @@ export async function maybeSpawnNextOccurrence(taskId: string): Promise<string |
       action: 'RECURRENCE',
       detail: `All assignees completed — occurrence #${nextOccurrence} scheduled for ${dueLabel}`,
     },
+  })
+
+  // Tell the assignees a new occurrence is on their plate.
+  await notifyAssignees({
+    taskId: created.id,
+    recipientIds: task.assignments.map((a) => a.userId),
+    type: 'RECURRING',
+    title: 'New occurrence of a recurring task',
+    message: `${task.title} — occurrence #${nextOccurrence} is due ${dueLabel}.`,
   })
 
   return created.id
