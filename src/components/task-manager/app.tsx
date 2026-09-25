@@ -25,6 +25,14 @@ import { InitialAvatar } from './shared'
 import type { Me, TaskDTO } from './types'
 import { cn } from '@/lib/utils'
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
+import {
   ClipboardList,
   LayoutDashboard,
   CalendarDays,
@@ -34,6 +42,7 @@ import {
   LogOut,
   Plus,
   Loader2,
+  Menu,
 } from 'lucide-react'
 
 type View = 'home' | 'calendar' | 'team' | 'reports' | 'admin'
@@ -47,6 +56,7 @@ export function TaskManagerApp() {
   const [newTaskOpen, setNewTaskOpen] = useState(false)
   const [newTaskDate, setNewTaskDate] = useState<string | undefined>(undefined)
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
+  const [navOpen, setNavOpen] = useState(false)
 
   const loadMe = useCallback(async () => {
     try {
@@ -136,8 +146,68 @@ export function TaskManagerApp() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Sheet open={navOpen} onOpenChange={setNavOpen}>
+              <SheetTrigger asChild>
+                <button
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-brand-300 hover:text-brand-600 md:hidden"
+                  aria-label="Open navigation menu"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[85%] gap-0 p-0 sm:max-w-xs">
+                <SheetHeader className="border-b border-slate-200/70 bg-gradient-to-br from-brand-50 to-brand-100/50 px-4 py-4">
+                  <div className="flex items-center gap-2.5 pr-8">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-md shadow-brand-200">
+                      <ClipboardList className="h-5 w-5" />
+                    </div>
+                    <div className="leading-tight">
+                      <SheetTitle className="text-sm font-bold tracking-tight text-slate-900">Tasknet</SheetTitle>
+                      <SheetDescription className="text-[11px] text-slate-500">
+                        {me.name} · {me.designation}
+                      </SheetDescription>
+                    </div>
+                  </div>
+                </SheetHeader>
+
+                <nav className="flex-1 overflow-y-auto p-2" aria-label="Mobile navigation">
+                  <div className="flex flex-col gap-1">
+                    {navItems
+                      .filter((n) => n.show)
+                      .map((n) => (
+                        <button
+                          key={n.key}
+                          onClick={() => {
+                            setView(n.key)
+                            setNavOpen(false)
+                          }}
+                          aria-current={view === n.key ? 'page' : undefined}
+                          className={cn(
+                            'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition',
+                            view === n.key
+                              ? 'bg-brand-600 text-white shadow-sm shadow-brand-200'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          )}
+                        >
+                          <n.icon className="h-4 w-4" />
+                          {n.label}
+                        </button>
+                      ))}
+                  </div>
+                </nav>
+
+                <div className="border-t border-slate-200/70 p-3">
+                  {me.role !== 'ADMIN' && (
+                    <Button className="w-full" size="sm" onClick={() => { setNavOpen(false); openNewTask() }}>
+                      <Plus className="mr-1.5 h-4 w-4" /> New Task
+                    </Button>
+                  )}
+                </div>
+              </SheetContent>
+            </Sheet>
+
             {me.role !== 'ADMIN' && (
-              <Button size="sm" onClick={() => openNewTask()} className="hidden sm:inline-flex">
+              <Button size="sm" onClick={() => openNewTask()} className="hidden md:inline-flex">
                 <Plus className="mr-1.5 h-4 w-4" /> New Task
               </Button>
             )}
@@ -172,8 +242,8 @@ export function TaskManagerApp() {
           </div>
         </div>
 
-        {/* Nav tabs */}
-        <nav className="mx-auto max-w-7xl px-4 pb-2" aria-label="Main navigation">
+        {/* Nav tabs (tablet/desktop only — mobile uses the drawer above) */}
+        <nav className="mx-auto hidden max-w-7xl px-4 pb-2 md:block" aria-label="Main navigation">
           <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
             {navItems
               .filter((n) => n.show)
