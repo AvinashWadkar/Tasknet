@@ -52,7 +52,7 @@ export function NotificationGate({ open, onDone }: { open: boolean; onDone: () =
     default:
       'Tasknet will send a browser popup the moment a new task is assigned to you. You must allow notifications to keep receiving assignment alerts.',
     denied:
-      'Notifications for this site were blocked earlier. Open your browser site settings for Tasknet, allow notifications, then come back and re-check. You can continue for now, but you will be asked again on your next login.',
+      'Notifications for this site were blocked earlier. Open your browser site settings for Tasknet, allow notifications, then come back and re-check.',
     unsupported:
       'Your browser does not support notifications. You will still see in-app toasts for new assignments.',
   }[perm]
@@ -67,7 +67,7 @@ export function NotificationGate({ open, onDone }: { open: boolean; onDone: () =
       <DialogContent
         showCloseButton={false}
         className="max-w-md"
-        {...(perm === 'default' ? blockClicks : {})}
+        {...(perm === 'default' || perm === 'denied' ? blockClicks : {})}
       >
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-400 to-brand-700 text-white shadow-lg shadow-brand-200">
           <BellRing className="h-7 w-7" />
@@ -83,14 +83,9 @@ export function NotificationGate({ open, onDone }: { open: boolean; onDone: () =
             </Button>
           )}
           {perm === 'denied' && (
-            <>
-              <Button className="w-full" onClick={recheck}>
-                I&apos;ve enabled it — re-check
-              </Button>
-              <Button variant="ghost" onClick={onDone}>
-                Continue without notifications for now
-              </Button>
-            </>
+            <Button className="w-full" onClick={recheck}>
+              I&apos;ve enabled it — re-check
+            </Button>
           )}
           {perm === 'unsupported' && (
             <Button className="w-full" onClick={onDone}>
