@@ -15,7 +15,8 @@ import { ToastAction } from '@/components/ui/toast'
 import { api } from './api'
 import { subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
-import { Bell, BellRing, CheckCheck, MessageSquarePlus, Send, Loader2 } from 'lucide-react'
+import { PushTestDialog } from './push-test-dialog'
+import { Bell, BellRing, CheckCheck, MessageSquarePlus, Send } from 'lucide-react'
 
 type Notif = {
   id: string
@@ -36,7 +37,7 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
   const [open, setOpen] = useState(false)
   const [pushConfigured, setPushConfigured] = useState<boolean | null>(null)
   const [pushRegistered, setPushRegistered] = useState(false)
-  const [sendingTest, setSendingTest] = useState(false)
+  const [testOpen, setTestOpen] = useState(false)
   const popped = useRef<Set<string>>(new Set())
 
   const permissionState = () =>
@@ -135,28 +136,6 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
       await load(false)
     } else if (result === 'denied') {
       toast({ title: 'Notifications blocked', description: 'Allow notifications in your browser settings to enable popups.' })
-    }
-  }
-
-  async function sendTestPush() {
-    setSendingTest(true)
-    try {
-      const r = await api<{ ok: boolean; reason?: string; message?: string; sent?: number }>('/api/push/diagnose', {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
-      if (r.ok) {
-        toast({ title: 'Test push sent ✅', description: 'Check your browser / OS for the popup notification.' })
-      } else {
-        toast({
-          title: 'Web push is not working',
-          description: r.message || r.reason || 'The push could not be delivered.',
-        })
-      }
-    } catch (e) {
-      toast({ title: 'Could not send test push', description: e instanceof Error ? e.message : 'Please try again.' })
-    } finally {
-      setSendingTest(false)
     }
   }
 
@@ -291,24 +270,15 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
                   {pushConfigured === null ? 'Checking web push…' : 'Registering web push…'}
                 </p>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2 w-full"
-                onClick={sendTestPush}
-                disabled={sendingTest}
-              >
-                {sendingTest ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Send className="mr-1.5 h-3.5 w-3.5" />
-                )}
+              <Button size="sm" variant="outline" className="mt-2 w-full" onClick={() => setTestOpen(true)}>
+                <Send className="mr-1.5 h-3.5 w-3.5" />
                 Send test notification
               </Button>
             </div>
           </>
         )}
       </DropdownMenuContent>
+      {testOpen && <PushTestDialog open={testOpen} onClose={() => setTestOpen(false)} />}
     </DropdownMenu>
   )
 }
