@@ -28,21 +28,41 @@ export type PushPayload = {
   tag?: string
 }
 
+/** Result of a best-effort push dispatch campaign. */
+export type PushDispatch = {
+  /** VAPID keys were present, so pushes could be attempted. */
+  configured: boolean
+  /** Unique recipient users requested. */
+  recipients: number
+  /** Stored browser subscriptions found among the recipients. */
+  subscriptions: number
+  /** Pushes accepted by the push services (the max the server can confirm). */
+  dispatched: number
+  /** Pushes rejected (stale subscription, VAPID mismatch, expired…). */
+  failures: number
+  /** Dead (404/410) subscriptions that were pruned as garbage. */
+  pruned: number
+}
+
 /**
  * Deliver a native OS push notification to a set of users via their browser
  * web-push subscriptions. Best-effort: never throws; dead subscriptions are
- * pruned. Returns how many pushes were dispatched (0 if no VAPID config).
+ * pruned. Reports exactly what happened so callers can surface it to users.
  */
 export async function sendPushToUsers(
   userIds: string[],
   payload: PushPayload
-): Promise<number> {
-  if (!ensureConfig()) return 0
+): Promise<PushDispatch> {
   const unique = [...new Set(userIds)]
-  if (unique.length === 0) return 0
+  const configured = ensureConfig()
+  if (!configured || unique.length === 0) {
+    return { configured, recipients: unique.length, subscriptions: 0, dispatched: 0, failures: 0, pruned: 0 }
+  }
 
   const subs = await db.pushSubscription.findMany({ where: { userId: { in: unique } } })
-  if (subs.length === 0) return 0
+  if (subs.length === 0) {
+    return { configured, recipients: unique.length, subscriptions: 0, dispatched: 0, failures: 0, pruned: 0 }
+  }
 
   const data = JSON.stringify({
     title: payload.title,
@@ -51,7 +71,8 @@ export async function sendPushToUsers(
     tag: payload.tag || `tasknet-${Date.now()}`,
   })
 
-  let sent = 0
+  let dispatched = 0
+  let failures = 0
   const dead: string[] = []
 
   await Promise.all(
@@ -61,11 +82,14 @@ export async function sendPushToUsers(
           { endpoint: sub.endpoint, keys: { auth: sub.keysAuth, p256dh: sub.keysP256dh } },
           data
         )
-        sent++
+        dispatched++
       } catch (err) {
         const status = (err as { statusCode?: number })?.statusCode
         if (status === 404 || status === 410) dead.push(sub.id)
-        else console.error('webpush send error', status, (err as Error)?.message)
+        else {
+          failures++
+          console.error('webpush send error', status, (err as Error)?.message)
+        }
       }
     })
   )
@@ -73,5 +97,12 @@ export async function sendPushToUsers(
   if (dead.length) {
     await db.pushSubscription.deleteMany({ where: { id: { in: dead } } })
   }
-  return sent
+  return {
+    configured,
+    recipients: unique.length,
+    subscriptions: subs.length,
+    dispatched,
+    failures,
+    pruned: dead.length,
+  }
 }

@@ -57,11 +57,11 @@ export async function POST(req: NextRequest) {
   })
 
   // Native OS push to the targeted users' browsers
-  await sendPushToUsers(recipients, {
+  const dispatch = await sendPushToUsers(recipients, {
     title,
     body: message.slice(0, 400),
     taskId: null,
   })
 
-  return NextResponse.json({ ok: true, sent: created.count })
+  return NextResponse.json({ ok: true, sent: created.count, webPush: dispatch })
 }

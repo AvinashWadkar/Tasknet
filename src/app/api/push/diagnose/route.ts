@@ -29,20 +29,22 @@ export async function POST() {
     })
   }
 
-  const sent = await sendPushToUsers([session.id], {
+  const dispatch = await sendPushToUsers([session.id], {
     title: 'Test notification',
     body: 'Web push is working — you should see this as a browser popup.',
     tag: `test-${Date.now()}`,
   })
 
-  if (sent === 0) {
+  if (dispatch.dispatched === 0) {
     return NextResponse.json({
       ok: false,
       reason: 'send-failed',
       message:
-        'The push was attempted but the push service rejected it (stale subscription or VAPID mismatch). Re-register by reloading the page.',
+        dispatch.failures > 0
+          ? 'The push service rejected your subscription (stale registration or VAPID key mismatch). Reload the page so the app re-registers it, then try again.'
+          : 'The push was attempted but no delivery could be confirmed. Reload the page and try again.',
     })
   }
 
-  return NextResponse.json({ ok: true, sent })
+  return NextResponse.json({ ok: true, sent: dispatch.dispatched })
 }

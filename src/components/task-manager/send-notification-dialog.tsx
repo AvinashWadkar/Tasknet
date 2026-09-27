@@ -17,7 +17,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { api } from './api'
 import type { DirectoryUser } from './types'
-import { ArrowRightLeft, CheckCircle2, Loader2, Megaphone, Search, Wrench, XCircle } from 'lucide-react'
+import type { PushDispatch } from '@/lib/webpush'
+import { ArrowRightLeft, CheckCircle2, Loader2, Megaphone, Search, TriangleAlert, Wrench, XCircle } from 'lucide-react'
 
 const AUTH_STEPS = [
   'You must be signed in as an Administrator to send broadcast notifications.',
@@ -36,6 +37,32 @@ const GENERIC_STEPS = [
   'Check that you are signed in and have a stable connection.',
   'If the issue persists, ask the administrator to review the server logs for /api/admin/notifications.',
 ]
+
+const PUSH_STEPS: Record<string, string[]> = {
+  'no-config': [
+    'Native web push is disabled on this server because the VAPID keys are missing.',
+    'Ask the administrator to set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT on the server environment.',
+    'Rebuild and redeploy the app, then repeat this broadcast.',
+  ],
+  'no-subs': [
+    'None of the recipients has registered a browser for native popups, so they only got the in-app bell notification.',
+    'Recipients: click the bell → "Enable browser popups" → Allow, then reload the page.',
+    'Run "Send test notification" from their side to confirm a popup arrives, then repeat this broadcast.',
+  ],
+  failures: [
+    'Some registered browsers rejected the popup — usually the subscription is stale or was made under a different VAPID key (for example localhost vs the live site).',
+    'Ask those recipients to reload Tasknet once: the app re-registers the subscription automatically when the keys changed.',
+    'If it persists, they should reset the site notification permission (browser Site settings → Notifications → Reset → Allow) and reload.',
+  ],
+}
+
+function pushIssue(w?: PushDispatch): keyof typeof PUSH_STEPS | null {
+  if (!w) return null
+  if (!w.configured) return 'no-config'
+  if (w.subscriptions === 0) return 'no-subs'
+  if (w.failures > 0 || w.dispatched < w.subscriptions) return 'failures'
+  return null
+}
 
 function fixSteps(err: string): string[] {
   const e = err.toLowerCase()
@@ -60,7 +87,7 @@ export function SendNotificationDialog({
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [sendState, setSendState] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
-  const [sent, setSent] = useState(0)
+  const [result, setResult] = useState<{ sent: number; webPush?: PushDispatch } | null>(null)
   const [showSteps, setShowSteps] = useState(false)
 
   const filtered = useMemo(() => {
@@ -86,7 +113,7 @@ export function SendNotificationDialog({
     setSearch('')
     setError(null)
     setSendState('idle')
-    setSent(0)
+    setResult(null)
     setShowSteps(false)
   }
 
@@ -106,7 +133,7 @@ export function SendNotificationDialog({
     setShowSteps(false)
     setSendState('sending')
     try {
-      const r = await api<{ sent: number }>('/api/admin/notifications', {
+      const r = await api<{ sent: number; webPush?: PushDispatch }>('/api/admin/notifications', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
@@ -114,7 +141,7 @@ export function SendNotificationDialog({
           ...(audience === 'selected' ? { userIds: selected } : {}),
         }),
       })
-      setSent(r.sent)
+      setResult(r)
       setSendState('success')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not send notification')
@@ -123,6 +150,7 @@ export function SendNotificationDialog({
   }
 
   const busy = sendState === 'sending'
+  const issue = pushIssue(result?.webPush)
   const steps = sendState === 'error' && error ? fixSteps(error) : []
 
   return (
@@ -138,15 +166,66 @@ export function SendNotificationDialog({
         </DialogHeader>
 
         {sendState === 'success' ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center" role="status">
-            <CheckCircle2 className="h-10 w-10 text-emerald-600" aria-hidden="true" />
-            <p className="text-sm font-medium text-emerald-800">
-              Notification delivered to {sent} {sent === 1 ? 'user' : 'users'}.
-            </p>
-            <p className="text-xs leading-snug text-emerald-700">
-              Recipients will see it in their bell right away. Web push popups are fired when their browser has
-              registered for native notifications.
-            </p>
+          <div className="space-y-3">
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center" role="status">
+              <CheckCircle2 className="h-10 w-10 text-emerald-600" aria-hidden="true" />
+              <p className="text-sm font-medium text-emerald-800">
+                Notification delivered to {result?.sent ?? 0} {result?.sent === 1 ? 'user' : 'users'} in-app.
+              </p>
+              <p className="text-xs leading-snug text-emerald-700">Recipients see it in their bell right away.</p>
+            </div>
+
+            {(() => {
+              const w = result?.webPush
+              if (!w) return null
+              if (issue) {
+                return (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+                    <p className="text-xs leading-snug text-amber-800">
+                      {!w.configured
+                        ? 'Native popups are disabled on this server — VAPID keys are missing. Recipients got the in-app bell only.'
+                        : w.subscriptions === 0
+                        ? 'No recipient has registered a browser for native popups yet — they got the in-app bell only.'
+                        : w.pruned > 0
+                        ? `${w.dispatched} of ${w.subscriptions} registered browser${w.subscriptions === 1 ? '' : 's'} received the popup; ${w.pruned} stale registration${w.pruned === 1 ? '' : 's'} were removed and need refreshing.`
+                        : `${w.dispatched} of ${w.subscriptions} registered browser${w.subscriptions === 1 ? '' : 's'} received the popup; ${w.failures} were rejected (stale subscription or changed VAPID key).`}
+                    </p>
+                  </div>
+                )
+              }
+              return (
+                <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
+                  <p className="text-xs leading-snug text-emerald-800">
+                    Native popups fired for all {w.subscriptions} registered browser{w.subscriptions === 1 ? '' : 's'}.
+                  </p>
+                </div>
+              )
+            })()}
+
+            {issue && PUSH_STEPS[issue].length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-between bg-white"
+                  onClick={() => setShowSteps((s) => !s)}
+                >
+                  <span className="flex items-center gap-1.5 text-xs font-semibold">
+                    <Wrench className="h-3.5 w-3.5" /> How to fix it
+                  </span>
+                  <ArrowRightLeft className={showSteps ? 'h-3.5 w-3.5 rotate-180 transition-transform' : 'h-3.5 w-3.5 transition-transform'} />
+                </Button>
+                {showSteps && (
+                  <ol className="list-decimal space-y-1.5 px-4 py-3 pl-8 text-xs leading-relaxed text-slate-600">
+                    {PUSH_STEPS[issue].map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
