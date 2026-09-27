@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { isPushConfigured } from '@/lib/webpush'
 
 /** GET /api/notifications — the signed-in user's notifications (newest first). */
 export async function GET() {
@@ -25,5 +26,5 @@ export async function GET() {
     db.notification.count({ where: { userId: session.id, readAt: null } }),
   ])
 
-  return NextResponse.json({ notifications: items, unread })
+  return NextResponse.json({ notifications: items, unread, pushConfigured: isPushConfigured() })
 }

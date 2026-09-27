@@ -15,7 +15,7 @@ import { ToastAction } from '@/components/ui/toast'
 import { api } from './api'
 import { subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
-import { Bell, BellRing, CheckCheck, MessageSquarePlus } from 'lucide-react'
+import { Bell, BellRing, CheckCheck, MessageSquarePlus, Send, Loader2 } from 'lucide-react'
 
 type Notif = {
   id: string
@@ -34,6 +34,9 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
   const [items, setItems] = useState<Notif[]>([])
   const [unread, setUnread] = useState(0)
   const [open, setOpen] = useState(false)
+  const [pushConfigured, setPushConfigured] = useState<boolean | null>(null)
+  const [pushRegistered, setPushRegistered] = useState(false)
+  const [sendingTest, setSendingTest] = useState(false)
   const popped = useRef<Set<string>>(new Set())
 
   const permissionState = () =>
@@ -74,9 +77,10 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
   const load = useCallback(
     async (popNew: boolean) => {
       try {
-        const r = await api<{ notifications: Notif[]; unread: number }>('/api/notifications')
+        const r = await api<{ notifications: Notif[]; unread: number; pushConfigured?: boolean }>('/api/notifications')
         setItems(r.notifications)
         setUnread(r.unread)
+        if (typeof r.pushConfigured === 'boolean') setPushConfigured(r.pushConfigured)
 
         const fresh = r.notifications.filter((n) => !popped.current.has(n.id)).reverse()
         r.notifications.forEach((n) => popped.current.add(n.id))
@@ -106,7 +110,7 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
     const trySubscribe = () => {
       if ('Notification' in window && Notification.permission === 'granted') {
-        void subscribeForPush()
+        void subscribeForPush().then(setPushRegistered)
       }
     }
     trySubscribe()
@@ -131,6 +135,28 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
       await load(false)
     } else if (result === 'denied') {
       toast({ title: 'Notifications blocked', description: 'Allow notifications in your browser settings to enable popups.' })
+    }
+  }
+
+  async function sendTestPush() {
+    setSendingTest(true)
+    try {
+      const r = await api<{ ok: boolean; reason?: string; message?: string; sent?: number }>('/api/push/diagnose', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      if (r.ok) {
+        toast({ title: 'Test push sent ✅', description: 'Check your browser / OS for the popup notification.' })
+      } else {
+        toast({
+          title: 'Web push is not working',
+          description: r.message || r.reason || 'The push could not be delivered.',
+        })
+      }
+    } catch (e) {
+      toast({ title: 'Could not send test push', description: e instanceof Error ? e.message : 'Please try again.' })
+    } finally {
+      setSendingTest(false)
     }
   }
 
@@ -244,6 +270,42 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
                 Your browser does not support popup notifications — you will still see in-app toasts.
               </p>
             )}
+          </>
+        )}
+
+        {perm === 'granted' && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-3 py-2">
+              {pushConfigured === false ? (
+                <p className="text-center text-[11px] leading-snug text-amber-700">
+                  ⚠ Native web push is disabled on this server (VAPID keys not configured). Popups will only show while
+                  this tab is open.
+                </p>
+              ) : pushRegistered ? (
+                <p className="flex items-center justify-center gap-1 text-center text-[11px] text-emerald-700">
+                  <CheckCheck className="h-3.5 w-3.5" /> Web push registered — popups arrive even with this tab closed.
+                </p>
+              ) : (
+                <p className="text-center text-[11px] text-slate-400">
+                  {pushConfigured === null ? 'Checking web push…' : 'Registering web push…'}
+                </p>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 w-full"
+                onClick={sendTestPush}
+                disabled={sendingTest}
+              >
+                {sendingTest ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Send test notification
+              </Button>
+            </div>
           </>
         )}
       </DropdownMenuContent>

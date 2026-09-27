@@ -34,11 +34,27 @@ export async function subscribeForPush(): Promise<boolean> {
     const reg = await navigator.serviceWorker.register('/sw.js')
     // Wait for the SW to be active before subscribing
     await navigator.serviceWorker.ready
-    const existing = await reg.pushManager.getSubscription()
-    const sub = existing || (await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-    }))
+    const currentKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    let existing = await reg.pushManager.getSubscription()
+    if (existing) {
+      // If the server's VAPID key was rotated, the browser's old subscription
+      // is bound to a different key and would silently reject pushes. When the
+      // browser exposes the bound key we can detect that and re-subscribe.
+      const opts = (existing as { options?: { applicationServerKey?: ArrayBuffer | Uint8Array | null } }).options
+      const bound = opts?.applicationServerKey
+        ? Buffer.from(new Uint8Array(opts.applicationServerKey as ArrayBuffer)).toString('hex')
+        : null
+      if (bound !== null && bound !== Buffer.from(currentKey).toString('hex')) {
+        await existing.unsubscribe()
+        existing = null
+      }
+    }
+    const sub =
+      existing ||
+      (await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: currentKey,
+      }))
     await api('/api/push-subscriptions', {
       method: 'POST',
       body: JSON.stringify({

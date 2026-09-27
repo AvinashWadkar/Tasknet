@@ -16,6 +16,11 @@ function ensureConfig(): boolean {
   return true
 }
 
+/** Whether the server runtime has a usable VAPID keypair for web push. */
+export function isPushConfigured(): boolean {
+  return ensureConfig()
+}
+
 export type PushPayload = {
   title: string
   body: string
