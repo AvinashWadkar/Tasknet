@@ -6,6 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,8 +42,93 @@ import type { DirectoryUser, Me } from './types'
 import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
-  Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone,
+  Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone, FilterX, Filter,
 } from 'lucide-react'
+
+type FilterState = Record<string, string[]>
+
+/** Dropdown filter on a table header — multi-selects distinct values of the column. */
+function ColumnFilter({
+  column,
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  column: string
+  label: string
+  options: { value: string; label: string }[]
+  selected: string[]
+  onChange: (values: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const active = selected.length > 0
+  const shown = options.filter((o) => selected.includes(o.value))
+  const summary = shown.length > 0 ? shown.map((o) => o.label).join(', ') : null
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="truncate">{label}</span>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Filter by ${label}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              'inline-flex h-4 items-center gap-0.5 rounded px-0.5 transition',
+              active ? 'text-brand-700' : 'text-slate-400 hover:text-slate-600'
+            )}
+          >
+            {active ? <FilterX className="h-3 w-3" /> : <Filter className="h-3 w-3" />}
+            {active && (
+              <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand-600 px-0.5 text-[9px] font-bold text-white">
+                {selected.length}
+              </span>
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="mt-1 max-h-80 w-60 overflow-y-auto">
+          <DropdownMenuLabel className="text-xs">
+            Filter by {label}
+            {summary && <span className="mt-0.5 block text-[11px] font-normal text-brand-700">:{summary}</span>}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {options.length === 0 && (
+            <DropdownMenuItem disabled>
+              <span className="text-xs text-slate-400">No values available</span>
+            </DropdownMenuItem>
+          )}
+          {options.map((o) => (
+            <DropdownMenuItem key={o.value} onSelect={(e) => e.preventDefault()}>
+              <span className="flex w-full items-center gap-2.5">
+                <Checkbox
+                  checked={selected.includes(o.value)}
+                  onCheckedChange={() => {
+                    const next = selected.includes(o.value)
+                      ? selected.filter((v) => v !== o.value)
+                      : [...selected, o.value]
+                    onChange(next)
+                  }}
+                />
+                <span className="truncate" title={o.label}>{o.label}</span>
+              </span>
+            </DropdownMenuItem>
+          ))}
+          {active && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => onChange([])}>
+                <span className="text-xs font-medium text-red-600">Clear filter</span>
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  )
+}
 
 const EMPTY = {
   employeeCode: '',
@@ -157,6 +252,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const { toast } = useToast()
   const [users, setUsers] = useState<DirectoryUser[] | null>(null)
   const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState<FilterState>({})
   const [form, setForm] = useState({ ...EMPTY })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -195,19 +291,71 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     loadUsers()
   }, [refreshKey])
 
+  const distinct = (vals: string[]) => [...new Set(vals.filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b))
+
+  const filterOptions = useMemo(() => {
+    if (!users) return {} as Record<string, { value: string; label: string }[]>
+    const emp = distinct(users.map((u) => u.employeeCode)).map((code) => {
+      const u = users.find((x) => x.employeeCode === code)!
+      return { value: `code:${code}`, label: `${code} — ${u.name}` }
+    })
+    const password = [
+      { value: 'pw:set', label: 'Set' },
+      { value: 'pw:unset', label: 'Not set' },
+    ]
+    const procDesig = distinct([...users.map((u) => u.process), ...users.map((u) => u.designation)]).map((v) => ({
+      value: `pd:${v}`,
+      label: v,
+    }))
+    const manager = distinct([...users.map((u) => u.managerName || ''), ...users.map((u) => u.managerEmail || '')]).map(
+      (v) => ({ value: `mgr:${v}`, label: v })
+    )
+    const created = distinct(users.filter((u) => u.createdAt).map((u) => u.createdAt!.slice(0, 7))).map((m) => {
+      const d = new Date(`${m}-15T00:00:00`)
+      return {
+        value: `m:${m}`,
+        label: d.toLocaleString('en-IN', { month: 'short', year: 'numeric' }) || m,
+      }
+    })
+    return { code: emp, password, pd: procDesig, mgr: manager, created }
+  }, [users])
+
   const filtered = useMemo(() => {
     if (!users) return []
     const q = search.trim().toLowerCase()
-    if (!q) return users
-    return users.filter(
-      (u) =>
-        u.name.toLowerCase().includes(q) ||
-        u.employeeCode.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        (u.designation || '').toLowerCase().includes(q) ||
-        (u.process || '').toLowerCase().includes(q)
-    )
-  }, [users, search])
+    const activeFilters = Object.fromEntries(
+      Object.entries(filters).filter(([, v]) => (v as string[]).length > 0)
+    ) as Record<string, string[]>
+    return users.filter((u) => {
+      if (q) {
+        const hitQ =
+          u.name.toLowerCase().includes(q) ||
+          u.employeeCode.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
+          (u.designation || '').toLowerCase().includes(q) ||
+          (u.process || '').toLowerCase().includes(q)
+        if (!hitQ) return false
+      }
+      const matches = (col: string, test: (v: string) => boolean) => {
+        const sel = activeFilters[col]
+        if (!sel) return true
+        return sel.some(test)
+      }
+      return (
+        matches('code', (v) => v === `code:${u.employeeCode}`) &&
+        matches('password', (v) => (v === 'pw:set' ? Boolean(u.password) : !u.password)) &&
+        matches('pd', (v) => v === `pd:${u.process}` || v === `pd:${u.designation}`) &&
+        matches('mgr', (v) => v === `mgr:${u.managerName || ''}` || v === `mgr:${u.managerEmail || ''}`) &&
+        matches('created', (v) => v === `m:${u.createdAt ? u.createdAt.slice(0, 7) : ''}`)
+      )
+    })
+  }, [users, search, filters])
+
+  function setFilter(col: string, values: string[]) {
+    setFilters((prev) => ({ ...prev, [col]: values }))
+  }
+
+  const activeFilterCount = Object.values(filters).reduce((n, v) => n + v.length, 0)
 
   function set(k: keyof typeof EMPTY, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -447,9 +595,16 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 Every employee ID in the system. Passwords are visible to you (admin) only.
               </CardDescription>
             </div>
-            <div className="relative w-full sm:w-56">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-              <Input placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              {activeFilterCount > 0 && (
+                <Button type="button" variant="outline" size="sm" className="shrink-0 text-xs" onClick={() => setFilters({})}>
+                  <FilterX className="mr-1 h-3.5 w-3.5" /> Clear ({activeFilterCount})
+                </Button>
+              )}
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                <Input placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -509,7 +664,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                   ))}
                   {filtered.length === 0 && (
                     <p className="rounded-lg border border-slate-100 px-3 py-8 text-center text-sm text-slate-400">
-                      No users match your search.
+                      No users match your search or filters.
                     </p>
                   )}
                 </div>
@@ -519,11 +674,51 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                   <table className="w-full min-w-[34rem] text-sm">
                     <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-3 py-2.5 font-semibold">Employee</th>
-                        <th className="px-3 py-2.5 font-semibold">Password</th>
-                        <th className="hidden px-3 py-2.5 font-semibold sm:table-cell">Process / Designation</th>
-                        <th className="hidden px-3 py-2.5 font-semibold md:table-cell">L1 Manager</th>
-                        <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">Created</th>
+                        <th className="px-3 py-2.5 font-semibold">
+                          <ColumnFilter
+                            column="code"
+                            label="Employee"
+                            options={filterOptions.code ?? []}
+                            selected={filters.code ?? []}
+                            onChange={(v) => setFilter('code', v)}
+                          />
+                        </th>
+                        <th className="px-3 py-2.5 font-semibold">
+                          <ColumnFilter
+                            column="password"
+                            label="Password"
+                            options={filterOptions.password ?? []}
+                            selected={filters.password ?? []}
+                            onChange={(v) => setFilter('password', v)}
+                          />
+                        </th>
+                        <th className="hidden px-3 py-2.5 font-semibold sm:table-cell">
+                          <ColumnFilter
+                            column="pd"
+                            label="Process / Designation"
+                            options={filterOptions.pd ?? []}
+                            selected={filters.pd ?? []}
+                            onChange={(v) => setFilter('pd', v)}
+                          />
+                        </th>
+                        <th className="hidden px-3 py-2.5 font-semibold md:table-cell">
+                          <ColumnFilter
+                            column="mgr"
+                            label="L1 Manager"
+                            options={filterOptions.mgr ?? []}
+                            selected={filters.mgr ?? []}
+                            onChange={(v) => setFilter('mgr', v)}
+                          />
+                        </th>
+                        <th className="hidden px-3 py-2.5 font-semibold lg:table-cell">
+                          <ColumnFilter
+                            column="created"
+                            label="Created"
+                            options={filterOptions.created ?? []}
+                            selected={filters.created ?? []}
+                            onChange={(v) => setFilter('created', v)}
+                          />
+                        </th>
                         <th className="hidden px-3 py-2.5 text-right font-semibold md:table-cell">Actions</th>
                       </tr>
                     </thead>
@@ -566,7 +761,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                       {filtered.length === 0 && (
                         <tr>
                           <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-400">
-                            No users match your search.
+                            No users match your search or filters.
                           </td>
                         </tr>
                       )}
