@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
         isFirstLogin: user.isFirstLogin,
         managerName: user.managerName,
         managerEmail: user.managerEmail,
+        teamScope: user.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
       },
     })
   } catch (e) {

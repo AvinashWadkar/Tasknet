@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { api } from './api'
 import { MultiSelect } from './multi-select'
+import { TeamScopeToggle } from './team-scope-toggle'
 import { AbortedBadge, InitialAvatar, OverdueBadge, StatusBadge } from './shared'
 import type { ReportFilterState, ReportsResponse } from './types'
 import { fmtDateTime } from '@/lib/dates'
@@ -153,9 +154,13 @@ function ChartCard({
 export function ReportsView({
   refreshKey,
   onOpenTask,
+  teamScope,
+  onTeamScopeChange,
 }: {
   refreshKey: number
   onOpenTask: (taskId: string) => void
+  teamScope: 'ALL' | 'DIRECT'
+  onTeamScopeChange: (scope: 'ALL' | 'DIRECT') => void
 }) {
   const { toast } = useToast()
   const [data, setData] = React.useState<ReportsResponse | null>(null)
@@ -183,7 +188,8 @@ export function ReportsView({
     [toast]
   )
 
-  // Initial load → then initialize filters to "all selected"
+  // Initial load → then initialize filters to "all selected".
+  // Re-runs (and re-initializes filters) when the team scope setting changes.
   React.useEffect(() => {
     let alive = true
     ;(async () => {
@@ -213,7 +219,7 @@ export function ReportsView({
     return () => {
       alive = false
     }
-  }, [])
+  }, [teamScope])
 
   // Refresh when tasks change elsewhere (task created/updated…)
   React.useEffect(() => {
@@ -290,14 +296,17 @@ export function ReportsView({
             </p>
           </div>
         </div>
-        <Button onClick={exportReport} disabled={exporting || !hasData} className="shadow-sm">
-          {exporting ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
-          ) : (
-            <Download className="h-4 w-4" aria-hidden="true" />
-          )}
-          Export Excel
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <TeamScopeToggle scope={teamScope} onChange={onTeamScopeChange} />
+          <Button onClick={exportReport} disabled={exporting || !hasData} className="shadow-sm">
+            {exporting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
+            ) : (
+              <Download className="h-4 w-4" aria-hidden="true" />
+            )}
+            Export Excel
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

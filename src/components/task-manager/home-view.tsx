@@ -7,6 +7,7 @@ import { api } from './api'
 import { TaskCard } from './task-card'
 import { TeamTaskCard } from './team-task-card'
 import { SmartPriorityPanel } from './smart-priority-panel'
+import { TeamScopeToggle } from './team-scope-toggle'
 import { StatListDialog, type StatKey, type StatBucket } from './stat-list-dialog'
 import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
@@ -20,12 +21,14 @@ export function HomeView({
   onOpenTask,
   onNewTask,
   onQuickStatus,
+  onTeamScopeChange,
 }: {
   me: Me
   refreshKey: number
   onOpenTask: (id: string) => void
   onNewTask: (date?: string) => void
   onQuickStatus: (task: TaskDTO, status: 'IN_PROGRESS' | 'COMPLETED') => void
+  onTeamScopeChange: (scope: 'ALL' | 'DIRECT') => void
 }) {
   const [tasks, setTasks] = useState<TaskDTO[] | null>(null)
   const [teamTasks, setTeamTasks] = useState<TaskDTO[] | null>(null)
@@ -329,15 +332,18 @@ export function HomeView({
 
   const teamTasksSection = (
     <section className="min-w-0" aria-label="My team tasks for today">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
           <UsersRound className="h-5 w-5 text-brand-600" /> My Team Tasks for Today
         </h2>
-        {teamTasks !== null && (
-          <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
-            {teamToday.length} {teamToday.length === 1 ? 'task' : 'tasks'}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          <TeamScopeToggle scope={me.teamScope ?? 'ALL'} onChange={onTeamScopeChange} />
+          {teamTasks !== null && (
+            <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
+              {teamToday.length} {teamToday.length === 1 ? 'task' : 'tasks'}
+            </span>
+          )}
+        </div>
       </div>
 
       {teamTasks === null ? (

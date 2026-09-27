@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
+import { TeamScopeToggle } from './team-scope-toggle'
 import { api } from './api'
 import type { Me, TeamData, TeamEmployee, TeamTask, TaskStatus } from './types'
 import { fmtDate, delayLabel } from '@/lib/dates'
@@ -213,10 +214,12 @@ export function TeamView({
   me,
   refreshKey,
   onOpenTask,
+  onTeamScopeChange,
 }: {
   me: Me
   refreshKey: number
   onOpenTask: (id: string) => void
+  onTeamScopeChange: (scope: 'ALL' | 'DIRECT') => void
 }) {
   const [data, setData] = useState<TeamData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -279,14 +282,17 @@ export function TeamView({
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-          <Network className="h-5 w-5 text-brand-600" />
-          {data?.scope === 'org' ? 'Organization View' : 'My Team View'}
-        </h2>
-        <p className="text-sm text-slate-500">
-          Employee-wise status and every task your downline is working on — click any task to see who&apos;s done and who&apos;s pending.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+            <Network className="h-5 w-5 text-brand-600" />
+            {data?.scope === 'org' ? 'Organization View' : 'My Team View'}
+          </h2>
+          <p className="text-sm text-slate-500">
+            Employee-wise status and every task your downline is working on — click any task to see who&apos;s done and who&apos;s pending.
+          </p>
+        </div>
+        <TeamScopeToggle scope={me.teamScope ?? 'ALL'} onChange={onTeamScopeChange} />
       </div>
 
       {error && (

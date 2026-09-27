@@ -12,6 +12,7 @@ export interface Me {
   isFirstLogin: boolean
   managerName: string | null
   managerEmail: string | null
+  teamScope?: 'ALL' | 'DIRECT'
   isManager?: boolean
 }
 

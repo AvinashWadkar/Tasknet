@@ -40,8 +40,10 @@ export async function GET() {
   let tree: TreeNode
 
   if (isAdmin) {
-    // Admin: virtual org root over all top-level users
-    visibleIds = allUsers.filter((u) => u.role !== 'ADMIN').map((u) => u.id)
+    // Admin: virtual org root over all top-level users — under DIRECT, only top-level (no-manager) employees
+    visibleIds = allUsers
+      .filter((u) => u.role !== 'ADMIN' && (session.teamScope !== 'DIRECT' || !u.managerId))
+      .map((u) => u.id)
     const byId = new Map(allUsers.map((u) => [u.id, u]))
     const build = (uid: string): TreeNode => {
       const u = byId.get(uid)!
@@ -57,7 +59,11 @@ export async function GET() {
       }
     }
     const roots = allUsers
-      .filter((u) => u.role !== 'ADMIN' && (!u.managerId || !byId.has(u.managerId)))
+      .filter(
+        (u) =>
+          u.role !== 'ADMIN' &&
+          (session.teamScope === 'DIRECT' ? !u.managerId : !u.managerId || !byId.has(u.managerId))
+      )
       .map((u) => build(u.id))
     tree = {
       id: 'ORG',
@@ -75,7 +81,10 @@ export async function GET() {
         { status: 403 }
       )
     }
-    visibleIds = await getDescendantIds(session.id)
+    visibleIds =
+      session.teamScope === 'DIRECT'
+        ? allUsers.filter((u) => u.managerId === session.id).map((u) => u.id)
+        : await getDescendantIds(session.id)
     const byId = new Map(allUsers.map((u) => [u.id, u]))
     const build = (uid: string): TreeNode => {
       const u = byId.get(uid)!

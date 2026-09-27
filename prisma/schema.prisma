@@ -24,6 +24,7 @@ model User {
   managerName   String? // L1 manager name (as entered by admin)
   managerEmail  String? // L1 manager email (as entered by admin)
   managerId     String? // resolved link to manager User (by email match)
+  teamScope     String   @default("ALL") // ALL (full downline) | DIRECT (only direct reportees)
   manager       User?    @relation("OrgTree", fields: [managerId], references: [id])
   reports       User[]   @relation("OrgTree")
   createdTasks  Task[]   @relation("TaskCreator")

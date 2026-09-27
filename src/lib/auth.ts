@@ -19,6 +19,7 @@ export interface SessionUser {
   isFirstLogin: boolean
   managerName: string | null
   managerEmail: string | null
+  teamScope: 'ALL' | 'DIRECT'
 }
 
 /** Create a signed session token for a user id */
@@ -70,6 +71,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       isFirstLogin: user.isFirstLogin,
       managerName: user.managerName,
       managerEmail: user.managerEmail,
+      teamScope: user.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
     }
   } catch {
     return null

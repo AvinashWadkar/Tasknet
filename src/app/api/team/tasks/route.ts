@@ -33,13 +33,20 @@ export async function GET() {
 
   let visibleIds: string[]
   if (session.role === 'ADMIN') {
+    // Admin: whole non-admin org — or, under DIRECT scope, only top-level (no-manager) employees
     const users = await db.user.findMany({
-      where: { isActive: true, role: { not: 'ADMIN' } },
+      where:
+        session.teamScope === 'DIRECT'
+          ? { isActive: true, role: { not: 'ADMIN' }, managerId: null }
+          : { isActive: true, role: { not: 'ADMIN' } },
       select: { id: true },
     })
     visibleIds = users.map((u) => u.id)
   } else {
-    visibleIds = await getDescendantIds(session.id)
+    visibleIds =
+      session.teamScope === 'DIRECT'
+        ? (await db.user.findMany({ where: { managerId: session.id, isActive: true }, select: { id: true } })).map((u) => u.id)
+        : await getDescendantIds(session.id)
   }
 
   // Plain employee (no downline): no team view

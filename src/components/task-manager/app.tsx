@@ -102,6 +102,27 @@ export function TaskManagerApp() {
 
   const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
+  // Global "team scope" setting (persisted on the server per user). Changing it
+  // from any page updates `me` everywhere and re-fetches all team-scoped views.
+  const setTeamScope = useCallback(
+    async (scope: 'ALL' | 'DIRECT') => {
+      const prev = me?.teamScope
+      setMe((m) => (m ? { ...m, teamScope: scope } : m))
+      try {
+        const r = await api<{ user: (Me & { isManager?: boolean }) | null }>('/api/auth/me', {
+          method: 'PATCH',
+          body: JSON.stringify({ teamScope: scope }),
+        })
+        if (r.user) setMe(r.user)
+        bumpRefresh()
+      } catch {
+        if (prev) setMe((m) => (m ? { ...m, teamScope: prev } : m))
+        toast({ title: 'Could not update the team view setting', description: 'Please try again.' })
+      }
+    },
+    [me?.teamScope, toast]
+  )
+
   async function logout() {
     try {
       await api('/api/auth/logout', { method: 'POST' })
@@ -304,15 +325,21 @@ export function TaskManagerApp() {
             onOpenTask={setDetailTaskId}
             onNewTask={openNewTask}
             onQuickStatus={onQuickStatusHome}
+            onTeamScopeChange={setTeamScope}
           />
         )}
         {view === 'home' && me.role === 'ADMIN' && <AdminPanel me={me} refreshKey={refreshKey} />}
         {view === 'calendar' && me.role !== 'ADMIN' && (
           <CalendarView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onNewTask={openNewTask} />
         )}
-        {view === 'team' && <TeamView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} />}
+        {view === 'team' && <TeamView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onTeamScopeChange={setTeamScope} />}
         {view === 'reports' && (me.isManager || me.role === 'ADMIN') && (
-          <ReportsView refreshKey={refreshKey} onOpenTask={setDetailTaskId} />
+          <ReportsView
+            teamScope={me.teamScope ?? 'ALL'}
+            onTeamScopeChange={setTeamScope}
+            refreshKey={refreshKey}
+            onOpenTask={setDetailTaskId}
+          />
         )}
         {view === 'admin' && me.role === 'ADMIN' && <AdminPanel me={me} refreshKey={refreshKey} />}
       </main>

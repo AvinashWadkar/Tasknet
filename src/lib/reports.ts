@@ -130,10 +130,11 @@ export function monthLabelOf(key: string): string {
   return `${MONTH_NAMES[m - 1]} ${y}`
 }
 
-/** Visible employees for reports: full downline (manager) or whole org (ADMIN). */
+/** Visible employees for reports: full downline (manager) or whole org (ADMIN), or only direct reportees. */
 export async function getReportScope(session: {
   id: string
   role: string
+  teamScope: 'ALL' | 'DIRECT'
 }): Promise<{ users: ReportUser[]; scope: 'team' | 'org' } | null> {
   const allUsers = await db.user.findMany({
     where: { isActive: true },
@@ -152,10 +153,15 @@ export async function getReportScope(session: {
   let visibleIds: string[]
   let scope: 'team' | 'org'
   if (session.role === 'ADMIN') {
-    visibleIds = allUsers.filter((u) => u.role !== 'ADMIN').map((u) => u.id)
+    visibleIds = allUsers
+      .filter((u) => u.role !== 'ADMIN' && (session.teamScope !== 'DIRECT' || !u.managerId))
+      .map((u) => u.id)
     scope = 'org'
   } else {
-    visibleIds = await getDescendantIds(session.id)
+    visibleIds =
+      session.teamScope === 'DIRECT'
+        ? allUsers.filter((u) => u.managerId === session.id).map((u) => u.id)
+        : await getDescendantIds(session.id)
     if (visibleIds.length === 0) return null
     scope = 'team'
   }
