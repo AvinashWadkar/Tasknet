@@ -62,14 +62,25 @@ function ColumnFilter({
   onChange: (values: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
   const active = selected.length > 0
+  const keyword = q.trim().toLowerCase()
+  const visible = keyword
+    ? options.filter((o) => o.label.toLowerCase().includes(keyword))
+    : options
   const shown = options.filter((o) => selected.includes(o.value))
   const summary = shown.length > 0 ? shown.map((o) => o.label).join(', ') : null
 
   return (
     <span className="inline-flex items-center gap-1">
       <span className="truncate">{label}</span>
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenu
+        open={open}
+        onOpenChange={(o) => {
+          setQ('')
+          setOpen(o)
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -89,39 +100,64 @@ function ColumnFilter({
             )}
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="mt-1 max-h-80 w-60 overflow-y-auto">
+        <DropdownMenuContent align="start" className="mt-1 flex max-h-80 w-64 flex-col overflow-hidden">
           <DropdownMenuLabel className="text-xs">
             Filter by {label}
             {summary && <span className="mt-0.5 block text-[11px] font-normal text-brand-700">:{summary}</span>}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {options.length === 0 && (
-            <DropdownMenuItem disabled>
-              <span className="text-xs text-slate-400">No values available</span>
-            </DropdownMenuItem>
-          )}
-          {options.map((o) => (
-            <DropdownMenuItem key={o.value} onSelect={(e) => e.preventDefault()}>
-              <span className="flex w-full items-center gap-2.5">
-                <Checkbox
-                  checked={selected.includes(o.value)}
-                  onCheckedChange={() => {
-                    const next = selected.includes(o.value)
-                      ? selected.filter((v) => v !== o.value)
-                      : [...selected, o.value]
-                    onChange(next)
-                  }}
-                />
-                <span className="truncate" title={o.label}>{o.label}</span>
-              </span>
-            </DropdownMenuItem>
-          ))}
-          {active && (
-            <>
-              <DropdownMenuSeparator />
+          <div className="px-2 pb-1">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Input
+                autoFocus
+                placeholder="Search filter values…"
+                className="h-8 pl-7 text-xs"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto p-0.5">
+            {visible.length === 0 && (
+              <DropdownMenuItem disabled>
+                <span className="text-xs text-slate-400">No values match.</span>
+              </DropdownMenuItem>
+            )}
+            {visible.map((o) => (
+              <DropdownMenuItem key={o.value} onSelect={(e) => e.preventDefault()}>
+                <span className="flex w-full items-center gap-2.5">
+                  <Checkbox
+                    checked={selected.includes(o.value)}
+                    onCheckedChange={() => {
+                      const next = selected.includes(o.value)
+                        ? selected.filter((v) => v !== o.value)
+                        : [...selected, o.value]
+                      onChange(next)
+                    }}
+                  />
+                  <span className="truncate" title={o.label}>{o.label}</span>
+                </span>
+              </DropdownMenuItem>
+            ))}
+            {visible.length === 0 && active && (
               <DropdownMenuItem onSelect={() => onChange([])}>
                 <span className="text-xs font-medium text-red-600">Clear filter</span>
               </DropdownMenuItem>
+            )}
+          </div>
+          {visible.length > 0 && active && (
+            <>
+              <DropdownMenuSeparator />
+              <div className="p-1">
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
+                >
+                  Clear filter
+                </button>
+              </div>
             </>
           )}
         </DropdownMenuContent>
