@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { fmtDate } from '@/lib/dates'
 import { taskInclude } from '@/lib/task-include'
+import { sendPushToUsers } from '@/lib/webpush'
 
 /**
  * POST /api/tasks/[id]/handoff — an assignee hands off THEIR part of a task to
@@ -100,6 +101,15 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const updated = await db.task.findUnique({
     where: { id: task.id },
     include: taskInclude,
+  })
+
+  // Native OS push to the new assignee
+  const handoffNote = note ? ` Note: "${note}"` : ''
+  await sendPushToUsers([toUserId], {
+    title: 'A task was handed to you',
+    body: `${session.name} handed you "${task.title}" (due ${fmtDate(task.dueDate)}).${handoffNote}`,
+    taskId: task.id,
+    tag: `handoff-${task.id}`,
   })
   return NextResponse.json({ ok: true, task: updated, handedTo: { id: target.id, name: target.name } })
 }

@@ -86,6 +86,20 @@ export function TaskManagerApp() {
     }
   }, [me])
 
+  // Open a task when a push-notification click navigates to /?task=<id>.
+  useEffect(() => {
+    if (!me) return
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const taskId = params.get('task')
+    if (taskId) {
+      setDetailTaskId(taskId)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('task')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [me])
+
   const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
 
   async function logout() {

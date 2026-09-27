@@ -13,6 +13,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import { api } from './api'
+import { subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
 import { Bell, BellRing, CheckCheck, MessageSquarePlus } from 'lucide-react'
 
@@ -98,6 +99,26 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
       clearInterval(t)
     }
   }, [load])
+
+  // Register the service worker + web-push subscription once permission is granted,
+  // and re-subscribe whenever the permission status changes to "granted".
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+    const trySubscribe = () => {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        void subscribeForPush()
+      }
+    }
+    trySubscribe()
+    if (navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'notifications' })
+        .then((status) => {
+          status.addEventListener('change', trySubscribe)
+        })
+        .catch(() => {})
+    }
+  }, [])
 
   async function enableNotifications() {
     if (!('Notification' in window)) {

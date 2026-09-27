@@ -1,7 +1,9 @@
 import { db } from '@/lib/db'
+import { sendPushToUsers } from '@/lib/webpush'
 
 /**
- * Create a TASK_ASSIGNED-style notification for each recipient.
+ * Create a TASK_ASSIGNED-style notification for each recipient AND deliver a
+ * native browser push via their web-push subscriptions.
  * - dedupes ids, drops empty set, skips excluded users (e.g. the acting user)
  * - fires inside the caller's transaction where possible via bulk createMany
  */
@@ -26,5 +28,12 @@ export async function notifyAssignees(input: {
       title: input.title,
       message: input.message.slice(0, 400),
     })),
+  })
+
+  // Best-effort native OS push — never blocks the caller
+  await sendPushToUsers(recipients, {
+    title: input.title,
+    body: input.message.slice(0, 400),
+    taskId: input.taskId,
   })
 }
