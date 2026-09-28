@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
 import { TeamScopeToggle } from './team-scope-toggle'
+import { TeamStatDialog, type TeamStatKey, type TeamStatBucket } from './team-stat-dialog'
 import { api } from './api'
 import type { Me, TeamData, TeamEmployee, TeamTask, TaskStatus } from './types'
 import { fmtDate, delayLabel } from '@/lib/dates'
+import { cn } from '@/lib/utils'
 import {
   Users,
   ListTodo,
@@ -226,6 +228,7 @@ export function TeamView({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [empSearch, setEmpSearch] = useState('')
   const [taskSearch, setTaskSearch] = useState('')
+  const [statBucket, setStatBucket] = useState<TeamStatBucket | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -268,15 +271,15 @@ export function TeamView({
   }, [allTasks, taskSearch])
 
   const totals = data?.totals
-  const statCards = totals
+  const statCards: { key: TeamStatKey; label: string; value: number; icon: typeof Users; cls: string }[] = totals
     ? [
-        { label: 'Team Members', value: totals.employees, icon: Users, cls: 'bg-slate-100 text-slate-700' },
-        { label: 'Total Tasks', value: totals.total, icon: ListTodo, cls: 'bg-brand-50 text-brand-700' },
-        { label: 'Pending', value: totals.pending, icon: Clock3, cls: 'bg-amber-50 text-amber-700' },
-        { label: 'In Progress', value: totals.inProgress, icon: Clock3, cls: 'bg-violet-50 text-violet-700' },
-        { label: 'Completed', value: totals.completed, icon: CheckCircle2, cls: 'bg-brand-50 text-brand-700' },
-        { label: 'Overdue', value: totals.overdue, icon: AlertTriangle, cls: 'bg-red-50 text-red-700' },
-        { label: 'Aborted', value: totals.aborted, icon: Ban, cls: 'bg-red-100 text-red-700' },
+        { key: 'members', label: 'Team Members', value: totals.employees, icon: Users, cls: 'bg-slate-100 text-slate-700' },
+        { key: 'total', label: 'Total Tasks', value: totals.total, icon: ListTodo, cls: 'bg-brand-50 text-brand-700' },
+        { key: 'pending', label: 'Pending', value: totals.pending, icon: Clock3, cls: 'bg-amber-50 text-amber-700' },
+        { key: 'inProgress', label: 'In Progress', value: totals.inProgress, icon: Clock3, cls: 'bg-violet-50 text-violet-700' },
+        { key: 'completed', label: 'Completed', value: totals.completed, icon: CheckCircle2, cls: 'bg-brand-50 text-brand-700' },
+        { key: 'overdue', label: 'Overdue', value: totals.overdue, icon: AlertTriangle, cls: 'bg-red-50 text-red-700' },
+        { key: 'aborted', label: 'Aborted', value: totals.aborted, icon: Ban, cls: 'bg-red-100 text-red-700' },
       ]
     : []
 
@@ -313,13 +316,32 @@ export function TeamView({
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
             {statCards.map((s) => (
-              <Card key={s.label} className="border-slate-200/80 shadow-sm">
+              <Card
+                key={s.key}
+                className={cn(
+                  'group cursor-pointer border-slate-200/80 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400',
+                  statBucket?.key === s.key && 'border-brand-300 ring-2 ring-brand-200'
+                )}
+                role="button"
+                tabIndex={0}
+                aria-label={`View ${s.label} details (${s.value})`}
+                onClick={() => setStatBucket({ key: s.key, label: s.label, value: s.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setStatBucket({ key: s.key, label: s.label, value: s.value })
+                  }
+                }}
+              >
                 <CardContent className="p-3.5">
                   <div className={`mb-2 flex h-8 w-8 items-center justify-center rounded-lg ${s.cls}`}>
                     <s.icon className="h-4 w-4" />
                   </div>
                   <p className="text-xl font-bold leading-none text-slate-900">{s.value}</p>
-                  <p className="mt-1 text-[11px] font-medium text-slate-500">{s.label}</p>
+                  <p className="mt-1 flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                    {s.label}
+                    <ChevronRight className="h-3 w-3 opacity-0 transition group-hover:opacity-100" />
+                  </p>
                 </CardContent>
               </Card>
             ))}
@@ -401,6 +423,13 @@ export function TeamView({
           </div>
         </>
       )}
+
+      <TeamStatDialog
+        bucket={statBucket}
+        employees={employees}
+        onClose={() => setStatBucket(null)}
+        onOpenTask={onOpenTask}
+      />
     </div>
   )
 }
