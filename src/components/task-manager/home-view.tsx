@@ -63,7 +63,9 @@ export function HomeView({
     }
   }, [refreshKey])
 
-  // Team tasks (downline-visible, excluding my own) — only fetched for managers
+  // Team tasks (downline-visible, excluding my own) — only fetched for managers.
+  // Refetched whenever the persisted scope changes so the home list always follows
+  // the "Only direct reportees" setting (server-side filtered).
   useEffect(() => {
     if (!showTeamList) {
       setTeamTasks(null)
@@ -76,7 +78,7 @@ export function HomeView({
     return () => {
       alive = false
     }
-  }, [refreshKey, showTeamList])
+  }, [refreshKey, showTeamList, me.teamScope])
 
   const { todayTasks, upcoming, stats, statLists } = useMemo(() => {
     const all = tasks || []
@@ -339,7 +341,6 @@ export function HomeView({
           <UsersRound className="h-5 w-5 text-brand-600" /> My Team Tasks for Today
         </h2>
         <div className="flex items-center gap-2">
-          <TeamScopeToggle scope={me.teamScope ?? 'ALL'} onChange={onTeamScopeChange} />
           {teamTasks !== null && (
             <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 ring-1 ring-brand-100">
               {teamToday.length} {teamToday.length === 1 ? 'task' : 'tasks'}
@@ -511,10 +512,19 @@ export function HomeView({
 
       {/* Today's tasks — managers get their team's list side-by-side */}
       {showTeamList ? (
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-          {myTasksSection}
-          {teamTasksSection}
-        </div>
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur-sm">
+            <p className="text-sm text-slate-500">
+              <span className="font-semibold text-slate-700">Team scope</span> — applies to the team task list below (and to
+              reports).
+            </p>
+            <TeamScopeToggle scope={me.teamScope ?? 'ALL'} onChange={onTeamScopeChange} />
+          </div>
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+            {myTasksSection}
+            {teamTasksSection}
+          </div>
+        </>
       ) : (
         myTasksSection
       )}
