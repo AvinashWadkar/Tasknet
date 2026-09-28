@@ -8,7 +8,7 @@ import { api } from './api'
 import type { Me, PriorityItem } from './types'
 import { fmtDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
-import { Sparkles, RefreshCw, AlarmClock, Users, Flag } from 'lucide-react'
+import { Sparkles, RefreshCw, AlarmClock, Users, Flag, PartyPopper } from 'lucide-react'
 
 /**
  * Smart Priority — ranks every open task assigned to / created by the user
@@ -96,9 +96,12 @@ Task Priority
         )}
 
         {plan && plan.length === 0 && !loading && (
-          <p className="py-4 text-center text-sm text-slate-500">
-            🎉 Nothing open right now — every assigned task is completed.
-          </p>
+          <div className="flex flex-col items-center gap-1.5 py-4 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-100 to-emerald-100">
+              <PartyPopper className="h-5 w-5 text-brand-600" strokeWidth={1.8} />
+            </span>
+            <p className="text-sm text-slate-500">Nothing open right now — every assigned task is completed.</p>
+          </div>
         )}
 
         {plan && plan.length > 0 && (

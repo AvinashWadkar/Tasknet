@@ -45,6 +45,8 @@ import {
   Plus,
   Loader2,
   Menu,
+  CheckCircle2,
+  Sparkles,
 } from 'lucide-react'
 
 type View = 'home' | 'calendar' | 'team' | 'reports' | 'admin'
@@ -347,7 +349,15 @@ export function TaskManagerApp() {
       {/* Footer — sticky to bottom via flex column + mt-auto */}
       <footer className="mt-auto border-t border-slate-200/70 bg-white/70 py-4">
         <p className="text-center text-xs text-slate-400">
-          Tasknet — one master task manager for every employee · Built by Avinash Wadkar
+          Tasknet — one master task manager for every employee · Built by{' '}
+          <a
+            href="https://www.linkedin.com/in/avinashwadkar/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-slate-500 underline-offset-2 transition hover:text-brand-600 hover:underline"
+          >
+            Avinash Wadkar
+          </a>
         </p>
       </footer>
 
@@ -357,7 +367,14 @@ export function TaskManagerApp() {
         onClose={() => setNewTaskOpen(false)}
         defaultDate={newTaskDate}
         onCreated={() => {
-          toast({ title: 'Task created & assigned ✅', description: 'Everyone assigned can now see it.' })
+          toast({
+            title: (
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Task created & assigned
+              </span>
+            ),
+            description: 'Everyone assigned can now see it.',
+          })
           bumpRefresh()
         }}
       />
@@ -379,7 +396,14 @@ export function TaskManagerApp() {
           employeeCode={me.employeeCode}
           onDone={() => {
             setMe({ ...me, isFirstLogin: false })
-            toast({ title: 'Password set successfully 🎉', description: 'Welcome to Tasknet!' })
+            toast({
+              title: (
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-brand-500" /> Password set successfully
+                </span>
+              ),
+              description: 'Welcome to Tasknet!',
+            })
             bumpRefresh()
           }}
           onLogout={logout}

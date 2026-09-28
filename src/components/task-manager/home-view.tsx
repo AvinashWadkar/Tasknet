@@ -11,7 +11,7 @@ import { TeamScopeToggle } from './team-scope-toggle'
 import { StatListDialog, type StatKey, type StatBucket } from './stat-list-dialog'
 import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
-import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound } from 'lucide-react'
+import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, PartyPopper, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound } from 'lucide-react'
 import { initialsOf, viewerStatus } from './shared'
 import { Button } from '@/components/ui/button'
 
@@ -305,7 +305,9 @@ export function HomeView({
       ) : todayTasks.length === 0 ? (
         <Card className="border-dashed border-slate-300 bg-white/60">
           <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-            <span className="text-4xl">🎉</span>
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-100 to-emerald-100 shadow-inner">
+              <PartyPopper className="h-7 w-7 text-brand-600" strokeWidth={1.8} />
+            </span>
             <p className="font-medium text-slate-700">All caught up!</p>
             <p className="text-sm text-slate-500">No pending or overdue tasks for today — enjoy the clear runway, or create a task for your team.</p>
             <Button variant="outline" size="sm" className="mt-2" onClick={() => onNewTask(today)}>

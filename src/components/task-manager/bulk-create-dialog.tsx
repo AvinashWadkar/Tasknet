@@ -102,7 +102,12 @@ export function BulkCreateDialog({
       if (data.createdCount > 0) {
         onCreated()
         toast({
-          title: `${data.createdCount} employee ID${data.createdCount === 1 ? '' : 's'} created ✅`,
+          title: (
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />{' '}
+              {data.createdCount} employee ID{data.createdCount === 1 ? '' : 's'} created
+            </span>
+          ),
           description:
             data.failedCount > 0
               ? `${data.failedCount} row${data.failedCount === 1 ? '' : 's'} had problems — see the details below.`

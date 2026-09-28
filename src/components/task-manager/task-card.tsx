@@ -5,7 +5,7 @@ import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
 import { recurrenceLabel } from '@/lib/recurring'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, viewerStatus } from './shared'
 import type { Me, TaskDTO } from './types'
-import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat } from 'lucide-react'
+import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat, Play, Check } from 'lucide-react'
 
 export function TaskCard({
   task,
@@ -110,16 +110,16 @@ export function TaskCard({
       {canQuick && (
         <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3" onClick={(e) => e.stopPropagation()}>
           <button
-            className="rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition hover:bg-violet-100"
+            className="inline-flex items-center gap-1 rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition hover:bg-violet-100"
             onClick={() => onQuickStatus?.('IN_PROGRESS')}
           >
-            ▶ Start working
+            <Play className="h-3 w-3 fill-current" /> Start working
           </button>
           <button
-            className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
+            className="inline-flex items-center gap-1 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
             onClick={() => onQuickStatus?.('COMPLETED')}
           >
-            ✓ Mark done
+            <Check className="h-3 w-3" strokeWidth={3} /> Mark done
           </button>
         </div>
       )}

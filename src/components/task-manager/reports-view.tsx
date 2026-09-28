@@ -268,7 +268,14 @@ export function ReportsView({
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-      toast({ title: 'Report exported ✅', description: 'Detailed Excel file downloaded.' })
+      toast({
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Report exported
+          </span>
+        ),
+        description: 'Detailed Excel file downloaded.',
+      })
     } catch (e) {
       toast({ title: 'Export failed', description: e instanceof Error ? e.message : 'Please try again.' })
     } finally {

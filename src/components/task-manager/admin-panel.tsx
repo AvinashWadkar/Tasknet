@@ -539,7 +539,11 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
         body: JSON.stringify({ ...form, managerEmails }),
       })
       toast({
-        title: 'Employee ID created ✅',
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <UserPlus className="h-4 w-4 text-emerald-500" /> Employee ID created
+          </span>
+        ),
         description: `${form.name} (${form.employeeCode}) can log in with the default password. They must set their own password on first login. You can view or copy their password from the All Users table.`,
       })
       setForm({ ...EMPTY })
@@ -619,7 +623,11 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
         body: JSON.stringify({ ...editForm, managerEmails }),
       })
       toast({
-        title: 'User updated ✅',
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <Pencil className="h-4 w-4 text-emerald-500" /> User updated
+          </span>
+        ),
         description: `${r.user.name} (${r.user.employeeCode}) details saved.`,
       })
       setEditTarget(null)

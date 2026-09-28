@@ -16,7 +16,7 @@ import { api } from './api'
 import { subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
 import { PushTestDialog } from './push-test-dialog'
-import { Bell, BellRing, CheckCheck, MessageSquarePlus, Send } from 'lucide-react'
+import { AlertTriangle, Bell, BellRing, CheckCheck, MessageSquarePlus, Send } from 'lucide-react'
 
 type Notif = {
   id: string
@@ -132,7 +132,14 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
     }
     const result = await Notification.requestPermission()
     if (result === 'granted') {
-      toast({ title: 'Notifications enabled 🔔', description: 'You will get a popup when a task is assigned to you.' })
+      toast({
+      title: (
+        <span className="inline-flex items-center gap-1.5">
+          <BellRing className="h-4 w-4 text-emerald-500" /> Notifications enabled
+        </span>
+      ),
+      description: 'You will get a popup when a task is assigned to you.',
+    })
       await load(false)
     } else if (result === 'denied') {
       toast({ title: 'Notifications blocked', description: 'Allow notifications in your browser settings to enable popups.' })
@@ -257,9 +264,9 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
             <DropdownMenuSeparator />
             <div className="px-3 py-2">
               {pushConfigured === false ? (
-                <p className="text-center text-[11px] leading-snug text-amber-700">
-                  ⚠ Native web push is disabled on this server (VAPID keys not configured). Popups will only show while
-                  this tab is open.
+                <p className="flex items-start justify-center gap-1 text-center text-[11px] leading-snug text-amber-700">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Native web push is disabled on this server
+                  (VAPID keys not configured). Popups will only show while this tab is open.
                 </p>
               ) : pushRegistered ? (
                 <p className="flex items-center justify-center gap-1 text-center text-[11px] text-emerald-700">
