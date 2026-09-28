@@ -10,6 +10,9 @@ import { isPushConfigured, sendPushToUsers } from '@/lib/webpush'
 export async function POST() {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  if (session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Only admins can send push notifications' }, { status: 403 })
+  }
 
   if (!isPushConfigured()) {
     return NextResponse.json({

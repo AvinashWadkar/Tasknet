@@ -261,7 +261,7 @@ export function TaskManagerApp() {
                 <Plus className="mr-1.5 h-4 w-4" /> New Task
               </Button>
             )}
-            <NotificationBell onOpenTask={setDetailTaskId} />
+            <NotificationBell onOpenTask={setDetailTaskId} isAdmin={me.role === 'ADMIN'} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button

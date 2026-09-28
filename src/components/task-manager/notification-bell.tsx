@@ -30,7 +30,7 @@ type Notif = {
 
 const POLL_MS = 30_000
 
-export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string | null) => void }) {
+export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId: string | null) => void; isAdmin: boolean }) {
   const { toast } = useToast()
   const [items, setItems] = useState<Notif[]>([])
   const [unread, setUnread] = useState(0)
@@ -259,7 +259,7 @@ export function NotificationBell({ onOpenTask }: { onOpenTask: (taskId: string |
           </>
         )}
 
-        {perm === 'granted' && (
+        {perm === 'granted' && isAdmin && (
           <>
             <DropdownMenuSeparator />
             <div className="px-3 py-2">
