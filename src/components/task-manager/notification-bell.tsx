@@ -16,7 +16,7 @@ import { api } from './api'
 import { subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
 import { PushTestDialog } from './push-test-dialog'
-import { AlertTriangle, Bell, BellRing, CheckCheck, MessageSquarePlus, Send } from 'lucide-react'
+import { AlertTriangle, Bell, BellRing, CheckCheck, MessageSquarePlus, Send, Trash2 } from 'lucide-react'
 
 type Notif = {
   id: string
@@ -158,6 +158,17 @@ export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId:
     }
   }
 
+  async function clearAll() {
+    try {
+      await api<{ deleted: number }>('/api/notifications', { method: 'DELETE' })
+    } catch {
+      // ignore
+    }
+    setItems([])
+    setUnread(0)
+    popped.current.clear()
+  }
+
   async function markOneRead(n: Notif) {
     if (n.readAt) return
     try {
@@ -193,20 +204,30 @@ export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId:
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 max-w-[calc(100vw-2rem)]">
-        <DropdownMenuLabel className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 font-semibold">
-            <Bell className="h-4 w-4 text-brand-600" /> Notifications
-            {unread > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">{unread} new</span>}
-          </span>
-          {unread > 0 && (
-            <button
-              onClick={markAllRead}
-              className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-            >
-              <CheckCheck className="h-3.5 w-3.5" /> Mark all read
-            </button>
-          )}
-        </DropdownMenuLabel>
+<DropdownMenuLabel className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Bell className="h-4 w-4 text-brand-600" /> Notifications
+              {unread > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">{unread} new</span>}
+            </span>
+            {items.length > 0 && (
+              <span className="flex items-center gap-2">
+                {unread > 0 && (
+                  <button
+                    onClick={markAllRead}
+                    className="flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                  </button>
+                )}
+                <button
+                  onClick={clearAll}
+                  className="flex items-center gap-1 text-xs font-medium text-red-600 hover:underline"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Clear all
+                </button>
+              </span>
+            )}
+          </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
         <div className="max-h-80 overflow-y-auto">
