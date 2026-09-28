@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -37,7 +38,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const process = str(body.process)
   const designation = str(body.designation)
   const managerName = str(body.managerName)
-  const managerEmail = str(body.managerEmail)?.toLowerCase()
+  const managerEmails = Array.isArray(body.managerEmails)
+    ? (body.managerEmails as unknown[]).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean)
+    : undefined
   let role: string | undefined
 
   if (typeof body.role === 'string') {
@@ -82,18 +85,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (role !== undefined) data.role = role
 
   let relinkManager = false
-  if (managerEmail !== undefined) {
-    if (!managerEmail) {
+  let managerIdsToSet: string[] | 'NO_CHANGE' = 'NO_CHANGE'
+  if (managerEmails !== undefined) {
+    if (managerEmails.length === 0) {
       data.managerEmail = null
+      data.managerName = null
       data.managerId = null
+      managerIdsToSet = []
     } else {
-      if (managerEmail === (email ?? user.email)) {
+      if (managerEmails.includes(email ?? user.email)) {
         return NextResponse.json({ error: 'A user cannot be their own manager' }, { status: 400 })
       }
-      data.managerEmail = managerEmail
-      const mgr = await db.user.findFirst({ where: { email: managerEmail } })
-      data.managerId = mgr ? mgr.id : null
-      relinkManager = Boolean(mgr)
+      const managers = await resolveManagersByEmail(managerEmails)
+      if (managers.length !== managerEmails.length) {
+        const missing = managerEmails
+          .filter((e) => !managers.some((m) => m.email === e))
+          .join(', ')
+        return NextResponse.json(
+          { error: `Manager email${missing.includes(',') ? 's' : ''} not found: ${missing}` },
+          { status: 400 }
+        )
+      }
+      const primary = managers[0]!
+      data.managerEmail = primary.email
+      data.managerName = primary.name
+      data.managerId = primary.id
+      managerIdsToSet = managers.map((m) => m.id)
+      relinkManager = true
     }
   }
 
@@ -103,12 +121,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const updated = await db.user.update({ where: { id }, data })
 
-  // Retroactive link: existing users that named this user as their L1 manager
+  // Persist the full set of manager edges whenever managers were edited.
+  if (managerIdsToSet !== 'NO_CHANGE') {
+    await replaceManagerMappings(id, managerIdsToSet)
+  }
+
+  // Retroactive link: existing users that named this user as their (primary) manager
   const finalEmail = updated.email
   if (relinkManager) {
     await db.user.updateMany({
       where: { managerEmail: finalEmail, id: { not: id }, managerId: null },
       data: { managerId: id },
+    })
+    const existingNamed = await db.user.findMany({
+      where: { managerEmail: finalEmail, id: { not: id } },
+      select: { id: true },
+    })
+    await db.managerMapping.createMany({
+      data: existingNamed.map((e) => ({ employeeId: e.id, managerId: id })),
+      skipDuplicates: true,
     })
   }
 
@@ -155,6 +186,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       managerEmail: null,
       managerName: null,
     },
+  })
+  await db.managerMapping.deleteMany({
+    where: { OR: [{ employeeId: id }, { managerId: id }] },
   })
 
   return NextResponse.json({ ok: true })

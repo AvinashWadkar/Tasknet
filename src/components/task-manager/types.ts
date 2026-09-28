@@ -68,6 +68,13 @@ export interface TaskDetailDTO extends TaskDTO {
   activities: ActivityDTO[]
 }
 
+export interface ManagerLite {
+  id: string
+  name: string
+  email: string
+  employeeCode: string
+}
+
 export interface DirectoryUser {
   id: string
   employeeCode: string
@@ -78,6 +85,7 @@ export interface DirectoryUser {
   role?: string
   managerName?: string | null
   managerEmail?: string | null
+  managers?: ManagerLite[] // every mapped manager (equal); empty = top level
   isFirstLogin?: boolean
   createdAt?: string
   password?: string | null // ADMIN-only: current password (plaintext mirror)
@@ -219,6 +227,7 @@ export interface ReportRowDTO {
   process: string
   designation: string
   managerId: string | null
+  managerIds: string[] // every mapped manager of the employee
   managerName: string | null
   status: TaskStatus
   completedAt: string | null

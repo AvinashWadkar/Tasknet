@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { isManager } from '@/lib/hierarchy'
 
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ user: null })
-  const reportCount = await db.user.count({
-    where: { managerId: user.id, isActive: true },
-  })
-  return NextResponse.json({ user: { ...user, isManager: reportCount > 0 } })
+  return NextResponse.json({ user: { ...user, isManager: await isManager(user.id) } })
 }
 
 export async function PATCH(req: Request) {
@@ -32,10 +30,6 @@ export async function PATCH(req: Request) {
     data: { teamScope },
   })
 
-  const reportCount = await db.user.count({
-    where: { managerId: updated.id, isActive: true },
-  })
-
   return NextResponse.json({
     user: {
       id: updated.id,
@@ -49,7 +43,7 @@ export async function PATCH(req: Request) {
       managerName: updated.managerName,
       managerEmail: updated.managerEmail,
       teamScope: updated.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
-      isManager: reportCount > 0,
+      isManager: await isManager(updated.id),
     },
   })
 }

@@ -215,6 +215,14 @@ export async function POST(req: NextRequest) {
         createdIds.push(user.id)
         createdEmailToId.set(v.email, user.id)
 
+        // Persist the manager edge (bulk currently supports a single manager).
+        if (managerId) {
+          await db.managerMapping.createMany({
+            data: [{ employeeId: user.id, managerId }],
+            skipDuplicates: true,
+          })
+        }
+
         let message = 'Created with the default password Digitide@123 (must change at first login)'
         const linked = Boolean(managerId)
         if (v.managerEmail && !linked) {
@@ -238,6 +246,14 @@ export async function POST(req: NextRequest) {
       await db.user.updateMany({
         where: { managerEmail: created.email, id: { not: id }, managerId: null },
         data: { managerId: id },
+      })
+      const existingNamed = await db.user.findMany({
+        where: { managerEmail: created.email, id: { not: id } },
+        select: { id: true },
+      })
+      await db.managerMapping.createMany({
+        data: existingNamed.map((e) => ({ employeeId: e.id, managerId: id })),
+        skipDuplicates: true,
       })
     }
 

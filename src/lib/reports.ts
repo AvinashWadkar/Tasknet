@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getDescendantIds } from '@/lib/hierarchy'
+import { getDescendantIds, getReportingEdges } from '@/lib/hierarchy'
 
 /**
  * Server-side report engine for the manager "Reports" tab.
@@ -15,15 +15,15 @@ export interface ReportUser {
   employeeCode: string
   process: string
   designation: string
-  managerId: string | null
-  managerName: string | null
+  managerIds: string[] // every mapped manager (empty = top level)
+  managerName: string | null // display: comma-joined names of all managers
 }
 
 export interface ReportFilters {
   months: string[] // 'YYYY-MM' — IST month of the task due date
   processes: string[]
   designations: string[]
-  managerIds: string[] // L1 manager (User.id) within the visible downline
+  managerIds: string[] // any of the employee's mapped L1 managers (User.id) within the visible downline
   userIds: string[]
 }
 
@@ -39,7 +39,7 @@ export interface ReportRow {
   employeeCode: string
   process: string
   designation: string
-  managerId: string | null
+  managerIds: string[] // any of the employee's mapped managers
   managerName: string | null
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
   completedAt: string | null
@@ -112,11 +112,11 @@ const DAY_MS = 86400000
 const IST_OFFSET_MIN = 330
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** Special manager-filter value representing employees with no L1 manager (org roots). */
+/** Special manager-filter value representing employees with no manager edge (org roots). */
 export const UNMANAGED_KEY = '__UNASSIGNED__'
 
-function managerMatches(managerId: string | null, selected: string[]): boolean {
-  if (managerId) return selected.includes(managerId)
+function managerMatches(managerIds: string[], selected: string[]): boolean {
+  if (managerIds.length) return managerIds.some((id) => selected.includes(id))
   return selected.includes(UNMANAGED_KEY)
 }
 
@@ -145,39 +145,54 @@ export async function getReportScope(session: {
       process: true,
       designation: true,
       role: true,
-      managerId: true,
     },
   })
   const byId = new Map(allUsers.map((u) => [u.id, u]))
+  const edges = await getReportingEdges()
+  const managed = new Set<string>()
+  for (const list of edges.values()) for (const id of list) managed.add(id)
+  const managedBy = new Map<string, string[]>()
+  for (const [mgrId, list] of edges) for (const id of list) {
+    const arr = managedBy.get(id) || []
+    arr.push(mgrId)
+    managedBy.set(id, arr)
+  }
 
   let visibleIds: string[]
   let scope: 'team' | 'org'
   if (session.role === 'ADMIN') {
     visibleIds = allUsers
-      .filter((u) => u.role !== 'ADMIN' && (session.teamScope !== 'DIRECT' || !u.managerId))
+      .filter((u) => u.role !== 'ADMIN' && (session.teamScope !== 'DIRECT' || !managed.has(u.id)))
       .map((u) => u.id)
     scope = 'org'
   } else {
     visibleIds =
       session.teamScope === 'DIRECT'
-        ? allUsers.filter((u) => u.managerId === session.id).map((u) => u.id)
+        ? edges.get(session.id) || []
         : await getDescendantIds(session.id)
     if (visibleIds.length === 0) return null
     scope = 'team'
   }
 
+  const managedByThis = managedBy
   const users: ReportUser[] = visibleIds
     .map((id) => byId.get(id))
     .filter((u): u is NonNullable<typeof u> => Boolean(u))
-    .map((u) => ({
-      id: u.id,
-      name: u.name,
-      employeeCode: u.employeeCode,
-      process: u.process,
-      designation: u.designation,
-      managerId: u.managerId,
-      managerName: u.managerId ? (byId.get(u.managerId)?.name ?? null) : null,
-    }))
+    .map((u) => {
+      const mgrIds = managedByThis.get(u.id) || []
+      const names = mgrIds
+        .map((id) => byId.get(id)?.name)
+        .filter((n): n is string => Boolean(n))
+      return {
+        id: u.id,
+        name: u.name,
+        employeeCode: u.employeeCode,
+        process: u.process,
+        designation: u.designation,
+        managerIds: mgrIds,
+        managerName: names.length ? names.join(', ') : null,
+      }
+    })
     .sort((a, b) => a.name.localeCompare(b.name))
 
   return { users, scope }
@@ -219,7 +234,7 @@ export async function loadReportRows(users: ReportUser[]): Promise<ReportRow[]> 
       employeeCode: u.employeeCode,
       process: u.process,
       designation: u.designation,
-      managerId: u.managerId,
+      managerIds: u.managerIds,
       managerName: u.managerName,
       status: a.status as ReportRow['status'],
       completedAt: a.completedAt ? a.completedAt.toISOString() : null,
@@ -237,7 +252,7 @@ function matches(row: ReportRow, f: ReportFilters): boolean {
   if (f.months.length && !f.months.includes(istMonthKey(new Date(row.dueDate)))) return false
   if (f.processes.length && !f.processes.includes(row.process)) return false
   if (f.designations.length && !f.designations.includes(row.designation)) return false
-  if (f.managerIds.length && !managerMatches(row.managerId, f.managerIds)) return false
+  if (f.managerIds.length && !managerMatches(row.managerIds, f.managerIds)) return false
   if (f.userIds.length && !f.userIds.includes(row.userId)) return false
   return true
 }
@@ -252,7 +267,7 @@ export function filterUsers(users: ReportUser[], f: ReportFilters): ReportUser[]
     (u) =>
       (!f.processes.length || f.processes.includes(u.process)) &&
       (!f.designations.length || f.designations.includes(u.designation)) &&
-      (!f.managerIds.length || managerMatches(u.managerId, f.managerIds)) &&
+      (!f.managerIds.length || managerMatches(u.managerIds, f.managerIds)) &&
       (!f.userIds.length || f.userIds.includes(u.id))
   )
 }
@@ -420,19 +435,30 @@ export function buildOptions(
     monthKeys.add(istMonthKey(new Date(r.dueDate)))
     if (r.completedAt) monthKeys.add(istMonthKey(new Date(r.completedAt)))
   }
-  // L1 managers within the downline — plus the viewer themselves when they
-  // directly manage visible people (their direct reports carry the viewer's id).
-  const managerIds = new Set(users.map((u) => u.managerId).filter((id): id is string => Boolean(id)))
-  if (viewer && users.some((u) => u.managerId === viewer.id)) managerIds.add(viewer.id)
+  // L1 managers within the downline (all mapped edges) — plus the viewer
+  // themselves when they directly manage visible people.
+  const managerIds = new Set<string>()
+  for (const u of users) for (const id of u.managerIds) managerIds.add(id)
+  const hasUnmanaged = users.some((u) => u.managerIds.length === 0)
+  if (viewer && users.some((u) => u.managerIds.includes(viewer.id))) managerIds.add(viewer.id)
   const managerById = new Map(users.map((u) => [u.id, u]))
-  if (viewer) managerById.set(viewer.id, { ...viewer, process: '', designation: '', managerId: null, managerName: null })
+  if (viewer)
+    managerById.set(viewer.id, {
+      id: viewer.id,
+      name: viewer.name,
+      employeeCode: viewer.employeeCode,
+      process: '',
+      designation: '',
+      managerIds: [],
+      managerName: null,
+    })
   const managerLabel = (id: string) => {
     if (id === UNMANAGED_KEY) return 'No manager (top level)'
     const m = managerById.get(id)
     return m ? `${m.name} (${m.employeeCode})${viewer && id === viewer.id ? ' — you' : ''}` : null
   }
   const managerOptionValues = [...managerIds]
-  if (users.some((u) => !u.managerId)) managerOptionValues.push(UNMANAGED_KEY)
+  if (hasUnmanaged) managerOptionValues.push(UNMANAGED_KEY)
   return {
     months: [...monthKeys]
       .sort()

@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import {
   AlertDialog,
@@ -43,9 +44,127 @@ import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
   Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone, FilterX, Filter,
+  Check, ChevronDown, X,
 } from 'lucide-react'
 
 type FilterState = Record<string, string[]>
+
+/** Searchable multi-select for assigning an employee's managers (all equal). */
+function ManagerPicker({
+  label,
+  people,
+  selected,
+  onChange,
+  exclude,
+}: {
+  label: string
+  people: DirectoryUser[]
+  selected: string[]
+  onChange: (next: string[]) => void
+  exclude?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const byId = new Map(people.map((p) => [p.id, p]))
+  const keyword = q.trim().toLowerCase()
+  const options = people.filter(
+    (p) =>
+      p.id !== exclude &&
+      (!keyword ||
+        p.name.toLowerCase().includes(keyword) ||
+        p.employeeCode.toLowerCase().includes(keyword) ||
+        p.email.toLowerCase().includes(keyword))
+  )
+  const selectedPeople = (selected.map((id) => byId.get(id)).filter(Boolean) as DirectoryUser[])
+
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="h-10 w-full justify-between gap-1.5 border-slate-200 bg-white px-3 font-normal data-[state=open]:border-brand-300 data-[state=open]:ring-2 data-[state=open]:ring-brand-100"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Users2 className="h-3.5 w-3.5 shrink-0 text-brand-500" aria-hidden="true" />
+              <span className="truncate text-sm text-slate-700">
+                {selectedPeople.length
+                  ? selectedPeople.map((p) => p.name).join(', ')
+                  : '— No manager (top level)'}
+              </span>
+            </span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-0" align="start">
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-3 py-2">
+            <p className="text-sm font-medium text-slate-700">Select manager(s)</p>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-red-600"
+              disabled={selected.length === 0}
+            >
+              <X className="h-3 w-3" aria-hidden="true" /> Clear
+            </button>
+          </div>
+          {people.length > 8 && (
+            <div className="border-b border-slate-100 px-3 py-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search people…"
+                  className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-2 text-sm outline-none placeholder:text-slate-400 focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+                />
+              </div>
+            </div>
+          )}
+          <div className="max-h-64 overflow-y-auto p-1.5" role="listbox" aria-multiselectable="true" aria-label={label}>
+            {options.length === 0 ? (
+              <p className="px-2 py-6 text-center text-xs text-slate-400">No people match.</p>
+            ) : (
+              options.map((p) => {
+                const checked = selected.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="option"
+                    aria-selected={checked}
+                    onClick={() =>
+                      onChange(checked ? selected.filter((id) => id !== p.id) : [...selected, p.id])
+                    }
+                    className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm text-slate-700 transition hover:bg-brand-50"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition',
+                        checked ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white'
+                      )}
+                    >
+                      {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{p.name}</span>
+                      <span className="block truncate text-xs text-slate-400">{p.employeeCode} · {p.email}</span>
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
 
 /** Dropdown filter on a table header — multi-selects distinct values of the column. */
 function ColumnFilter({
@@ -172,8 +291,6 @@ const EMPTY = {
   email: '',
   process: '',
   designation: '',
-  managerName: '',
-  managerEmail: '',
 }
 
 const EDIT_EMPTY = { ...EMPTY, role: 'EMPLOYEE' }
@@ -290,6 +407,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<FilterState>({})
   const [form, setForm] = useState({ ...EMPTY })
+  const [managerIds, setManagerIds] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -301,6 +419,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   // Edit-user dialog state
   const [editTarget, setEditTarget] = useState<DirectoryUser | null>(null)
   const [editForm, setEditForm] = useState({ ...EDIT_EMPTY })
+  const [editManagerIds, setEditManagerIds] = useState<string[]>([])
   const [editError, setEditError] = useState<string | null>(null)
   const [editBusy, setEditBusy] = useState(false)
 
@@ -343,9 +462,12 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       value: `pd:${v}`,
       label: v,
     }))
-    const manager = distinct([...users.map((u) => u.managerName || ''), ...users.map((u) => u.managerEmail || '')]).map(
-      (v) => ({ value: `mgr:${v}`, label: v })
-    )
+    const manager = distinct([
+      ...users.flatMap((u) => u.managers?.map((m) => m.name) ?? []),
+      ...users.flatMap((u) => u.managers?.map((m) => m.email) ?? []),
+      ...users.map((u) => u.managerName || ''),
+      ...users.map((u) => u.managerEmail || ''),
+    ]).map((v) => ({ value: `mgr:${v}`, label: v }))
     const created = distinct(users.filter((u) => u.createdAt).map((u) => u.createdAt!.slice(0, 7))).map((m) => {
       const d = new Date(`${m}-15T00:00:00`)
       return {
@@ -381,7 +503,14 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
         matches('code', (v) => v === `code:${u.employeeCode}`) &&
         matches('password', (v) => (v === 'pw:set' ? Boolean(u.password) : !u.password)) &&
         matches('pd', (v) => v === `pd:${u.process}` || v === `pd:${u.designation}`) &&
-        matches('mgr', (v) => v === `mgr:${u.managerName || ''}` || v === `mgr:${u.managerEmail || ''}`) &&
+        matches('mgr', (v) => {
+          const name = v.slice(4)
+          return (
+            v === `mgr:${u.managerName || ''}` ||
+            v === `mgr:${u.managerEmail || ''}` ||
+            Boolean(u.managers?.some((m) => m.name === name || m.email === name))
+          )
+        }) &&
         matches('created', (v) => v === `m:${u.createdAt ? u.createdAt.slice(0, 7) : ''}`)
       )
     })
@@ -402,15 +531,19 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     setError(null)
     setBusy(true)
     try {
+      const managerEmails = managerIds
+        .map((id) => users?.find((u) => u.id === id)?.email)
+        .filter((em): em is string => Boolean(em))
       await api<{ managerLinked: boolean; defaultPassword: string }>('/api/users', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, managerEmails }),
       })
       toast({
         title: 'Employee ID created ✅',
         description: `${form.name} (${form.employeeCode}) can log in with the default password. They must set their own password on first login. You can view or copy their password from the All Users table.`,
       })
       setForm({ ...EMPTY })
+      setManagerIds([])
       await loadUsers()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create user')
@@ -455,10 +588,15 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       email: u.email,
       process: u.process,
       designation: u.designation,
-      managerName: u.managerName || '',
-      managerEmail: u.managerEmail || '',
       role: u.role || 'EMPLOYEE',
     })
+    const mapped = u.managers?.map((m) => m.id) ?? []
+    if (mapped.length === 0 && u.managerEmail) {
+      // Legacy rows that only have the primary snapshot
+      const legacy = (users ?? []).filter((x) => x.email === u.managerEmail).map((x) => x.id)
+      if (legacy.length) mapped.push(...legacy)
+    }
+    setEditManagerIds(mapped)
     setEditError(null)
     setEditTarget(u)
   }
@@ -473,9 +611,12 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     setEditError(null)
     setEditBusy(true)
     try {
+      const managerEmails = editManagerIds
+        .map((id) => users?.find((u) => u.id === id)?.email)
+        .filter((em): em is string => Boolean(em))
       const r = await api<{ user: DirectoryUser }>(`/api/users/${editTarget.id}`, {
         method: 'PATCH',
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({ ...editForm, managerEmails }),
       })
       toast({
         title: 'User updated ✅',
@@ -521,8 +662,6 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     { key: 'email', label: 'Email ID', placeholder: 'e.g. avinash@digitide.com', type: 'email', required: true },
     { key: 'process', label: 'Process', placeholder: 'e.g. Customer Support', required: true },
     { key: 'designation', label: 'Designation', placeholder: 'e.g. Executive / TL / AM / DM', required: true },
-    { key: 'managerName', label: 'L1 Manager Name', placeholder: 'e.g. Priya Nair' },
-    { key: 'managerEmail', label: 'L1 Manager Email ID', placeholder: 'e.g. priya@digitide.com', type: 'email' },
   ]
 
   const editFields: { key: keyof typeof EDIT_EMPTY; label: string; type?: string; required?: boolean }[] = [
@@ -531,8 +670,6 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     { key: 'email', label: 'Email ID', type: 'email', required: true },
     { key: 'process', label: 'Process', required: true },
     { key: 'designation', label: 'Designation', required: true },
-    { key: 'managerName', label: 'L1 Manager Name' },
-    { key: 'managerEmail', label: 'L1 Manager Email ID', type: 'email' },
   ]
 
   return (
@@ -542,7 +679,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
           <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
             <ShieldCheck className="h-5 w-5 text-brand-600" /> Admin — User Management
           </h2>
-          <p className="text-sm text-slate-500">Only you can create employee IDs. Hierarchy links automatically by L1 Manager Email.</p>
+          <p className="text-sm text-slate-500">Only you can create employee IDs. Pick one or more managers (all equal) — employees with no manager are top level.</p>
         </div>
         <Button type="button" onClick={() => setSendOpen(true)} className="shrink-0">
           <Megaphone className="mr-2 h-4 w-4" /> Send Notification
@@ -576,6 +713,13 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                   />
                 </div>
               ))}
+
+              <ManagerPicker
+                label="Manager(s)"
+                people={users ?? []}
+                selected={managerIds}
+                onChange={setManagerIds}
+              />
 
               {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
@@ -678,8 +822,14 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                           <p className="truncate text-slate-400">{u.designation}</p>
                         </div>
                         <div className="min-w-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">L1 Manager</p>
-                          {u.managerName ? (
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Manager(s)</p>
+                          {u.managers && u.managers.length ? (
+                            u.managers.map((m) => (
+                              <p key={m.id} className="truncate">
+                                {m.name} <span className="text-slate-400">· {m.email}</span>
+                              </p>
+                            ))
+                          ) : u.managerName ? (
                             <>
                               <p className="truncate">{u.managerName}</p>
                               <p className="truncate text-slate-400">{u.managerEmail}</p>
@@ -740,7 +890,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                         <th className="hidden px-3 py-2.5 font-semibold md:table-cell">
                           <ColumnFilter
                             column="mgr"
-                            label="L1 Manager"
+                            label="Manager(s)"
                             options={filterOptions.mgr ?? []}
                             selected={filters.mgr ?? []}
                             onChange={(v) => setFilter('mgr', v)}
@@ -775,7 +925,16 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                             <p className="text-xs text-slate-400">{u.designation}</p>
                           </td>
                           <td className="hidden px-3 py-2.5 text-slate-600 md:table-cell">
-                            {u.managerName ? (
+                            {u.managers && u.managers.length ? (
+                              <ul className="space-y-0.5">
+                                {u.managers.map((m) => (
+                                  <li key={m.id}>
+                                    <p className="text-slate-600">{m.name}</p>
+                                    <p className="break-all text-xs text-slate-400">{m.email}</p>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : u.managerName ? (
                               <>
                                 <p>{u.managerName}</p>
                                 <p className="break-all text-xs text-slate-400">{u.managerEmail}</p>
@@ -900,6 +1059,14 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 </SelectContent>
               </Select>
             </div>
+
+            <ManagerPicker
+              label="Manager(s)"
+              people={users ?? []}
+              selected={editManagerIds}
+              onChange={setEditManagerIds}
+              exclude={editTarget?.id}
+            />
 
             {editError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">

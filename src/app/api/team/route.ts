@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
-import { getDescendantIds } from '@/lib/hierarchy'
+import { getDescendantIds, getReportingEdges, getManagedEmployeeIds } from '@/lib/hierarchy'
 
 interface TreeNode {
   id: string
@@ -16,6 +16,8 @@ interface TreeNode {
  * GET /api/team — manager view: hierarchy tree of the viewer's downline
  * plus employee-wise task status. Admin sees the whole org.
  * Downline can never see upline data (tree only grows downward from viewer).
+ * Hierarchy comes from ManagerMapping: an employee can report to several
+ * managers, and every mapped manager sees/tracks them equally.
  */
 export async function GET() {
   const session = await getSessionUser()
@@ -30,7 +32,6 @@ export async function GET() {
       designation: true,
       process: true,
       email: true,
-      managerId: true,
       role: true,
     },
   })
@@ -40,11 +41,14 @@ export async function GET() {
   let tree: TreeNode
 
   if (isAdmin) {
-    // Admin: virtual org root over all top-level users — under DIRECT, only top-level (no-manager) employees
+    // Admin: virtual org root over all employees — under DIRECT, only top-level
+    // (employees with no manager edge anywhere)
+    const managed = await getManagedEmployeeIds()
     visibleIds = allUsers
-      .filter((u) => u.role !== 'ADMIN' && (session.teamScope !== 'DIRECT' || !u.managerId))
+      .filter((u) => u.role !== 'ADMIN' && (session.teamScope !== 'DIRECT' || !managed.has(u.id)))
       .map((u) => u.id)
     const byId = new Map(allUsers.map((u) => [u.id, u]))
+    const childrenOf = await getReportingEdges()
     const build = (uid: string): TreeNode => {
       const u = byId.get(uid)!
       return {
@@ -53,17 +57,13 @@ export async function GET() {
         employeeCode: u.employeeCode,
         designation: u.designation,
         process: u.process,
-        children: allUsers
-          .filter((c) => c.managerId === uid && visibleIds.includes(c.id))
-          .map((c) => build(c.id)),
+        children: (childrenOf.get(uid) || [])
+          .filter((c) => visibleIds.includes(c))
+          .map((c) => build(c)),
       }
     }
     const roots = allUsers
-      .filter(
-        (u) =>
-          u.role !== 'ADMIN' &&
-          (session.teamScope === 'DIRECT' ? !u.managerId : !u.managerId || !byId.has(u.managerId))
-      )
+      .filter((u) => u.role !== 'ADMIN' && !managed.has(u.id))
       .map((u) => build(u.id))
     tree = {
       id: 'ORG',
@@ -74,7 +74,8 @@ export async function GET() {
       children: roots,
     }
   } else {
-    const reportCount = allUsers.filter((u) => u.managerId === session.id).length
+    const childrenOf = await getReportingEdges()
+    const reportCount = (childrenOf.get(session.id) || []).length
     if (reportCount === 0) {
       return NextResponse.json(
         { error: 'You do not have any team members reporting to you' },
@@ -83,7 +84,7 @@ export async function GET() {
     }
     visibleIds =
       session.teamScope === 'DIRECT'
-        ? allUsers.filter((u) => u.managerId === session.id).map((u) => u.id)
+        ? childrenOf.get(session.id) || []
         : await getDescendantIds(session.id)
     const byId = new Map(allUsers.map((u) => [u.id, u]))
     const build = (uid: string): TreeNode => {
@@ -94,7 +95,9 @@ export async function GET() {
         employeeCode: u.employeeCode,
         designation: u.designation,
         process: u.process,
-        children: allUsers.filter((c) => c.managerId === uid && visibleIds.includes(c.id)).map((c) => build(c.id)),
+        children: (childrenOf.get(uid) || [])
+          .filter((c) => visibleIds.includes(c))
+          .map((c) => build(c)),
       }
     }
     tree = build(session.id)

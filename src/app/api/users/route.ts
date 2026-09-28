@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 
@@ -10,24 +11,33 @@ export async function GET() {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  const users = await db.user.findMany({
-    where: { isActive: true },
-    orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      employeeCode: true,
-      name: true,
-      email: true,
-      process: true,
-      designation: true,
-      role: true,
-      managerName: true,
-      managerEmail: true,
-      isFirstLogin: true,
-      createdAt: true,
-      passwordPlain: true, // ADMIN-only; stripped below for non-admins
-    },
-  })
+  const [users, mappings] = await Promise.all([
+    db.user.findMany({
+      where: { isActive: true },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        employeeCode: true,
+        name: true,
+        email: true,
+        process: true,
+        designation: true,
+        role: true,
+        managerName: true,
+        managerEmail: true,
+        isFirstLogin: true,
+        createdAt: true,
+        passwordPlain: true, // ADMIN-only; stripped below for non-admins
+      },
+    }),
+    db.managerMapping.findMany({
+      where: { employee: { isActive: true }, manager: { isActive: true } },
+      select: {
+        employeeId: true,
+        manager: { select: { id: true, name: true, email: true, employeeCode: true } },
+      },
+    }),
+  ])
 
   if (session.role !== 'ADMIN') {
     // Non-admins only need directory basics to assign tasks — never passwords
@@ -42,10 +52,24 @@ export async function GET() {
       })),
     })
   }
+
+  const managersByEmployee = new Map<string, { id: string; name: string; email: string; employeeCode: string }[]>()
+  for (const m of mappings) {
+    const arr = managersByEmployee.get(m.employeeId) || []
+    arr.push({
+      id: m.manager.id,
+      name: m.manager.name,
+      email: m.manager.email,
+      employeeCode: m.manager.employeeCode,
+    })
+    managersByEmployee.set(m.employeeId, arr)
+  }
+
   // Admin sees every user's current password (plaintext mirror)
   return NextResponse.json({
     users: users.map((u) => ({
       ...u,
+      managers: managersByEmployee.get(u.id) || [],
       password: u.passwordPlain ?? null,
       passwordPlain: undefined,
     })),
@@ -69,6 +93,11 @@ export async function POST(req: NextRequest) {
     const designation = String(body.designation || '').trim()
     const managerName = String(body.managerName || '').trim()
     const managerEmail = String(body.managerEmail || '').trim().toLowerCase()
+    const managerEmails = Array.isArray(body.managerEmails)
+      ? (body.managerEmails as unknown[]).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean)
+      : managerEmail
+      ? [managerEmail]
+      : []
 
     if (!employeeCode || !name || !email || !process || !designation) {
       return NextResponse.json(
@@ -89,15 +118,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Email "${email}" is already registered` }, { status: 409 })
     }
 
-    // Auto-link L1 manager by email (manager must already be a created user)
-    let managerId: string | null = null
-    if (managerEmail) {
-      if (managerEmail === email) {
-        return NextResponse.json({ error: 'A user cannot be their own manager' }, { status: 400 })
-      }
-      const mgr = await db.user.findFirst({ where: { email: managerEmail } })
-      if (mgr) managerId = mgr.id
+    // Resolve managers by email (an employee can report to several, all equal).
+    const managers = await resolveManagersByEmail(managerEmails)
+    if (managers.some((m) => m.email === email)) {
+      return NextResponse.json({ error: 'A user cannot be their own manager' }, { status: 400 })
     }
+    if (managerEmails.length && managers.length !== managerEmails.length) {
+      const missing = managerEmails
+        .filter((e) => !managers.some((m) => m.email === e))
+        .join(', ')
+      return NextResponse.json(
+        { error: `Manager email${missing.includes(',') ? 's' : ''} not found: ${missing}` },
+        { status: 400 }
+      )
+    }
+    const managerIds = managers.map((m) => m.id)
+    const primary = managers[0] ?? null
 
     const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10)
     const user = await db.user.create({
@@ -107,9 +143,9 @@ export async function POST(req: NextRequest) {
         email,
         process,
         designation,
-        managerName: managerName || null,
-        managerEmail: managerEmail || null,
-        managerId,
+        managerName: primary ? primary.name : managerName || null,
+        managerEmail: primary ? primary.email : managerEmail || null,
+        managerId: primary ? primary.id : null,
         password: hash,
         passwordPlain: DEFAULT_PASSWORD,
         isFirstLogin: true,
@@ -117,17 +153,28 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    // Retroactive link: existing users that named this new user as their L1 manager
-    if (managerEmail) {
+    // Persist the full set of manager edges (single or multiple).
+    await replaceManagerMappings(user.id, managerIds)
+
+    // Retroactive link: existing users that named this new user as their (primary) manager.
+    if (primary) {
       await db.user.updateMany({
         where: { managerEmail: email, id: { not: user.id }, managerId: null },
         data: { managerId: user.id },
+      })
+      const existingNamed = await db.user.findMany({
+        where: { managerEmail: email, id: { not: user.id } },
+        select: { id: true },
+      })
+      await db.managerMapping.createMany({
+        data: existingNamed.map((e) => ({ employeeId: e.id, managerId: user.id })),
+        skipDuplicates: true,
       })
     }
 
     return NextResponse.json({
       user: { id: user.id, employeeCode: user.employeeCode, name: user.name, email: user.email },
-      managerLinked: Boolean(managerId),
+      managerLinked: managerIds.length > 0,
       defaultPassword: DEFAULT_PASSWORD,
     })
   } catch (e) {

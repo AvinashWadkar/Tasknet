@@ -321,7 +321,7 @@ export function ReportsView({
             <MultiSelect label="Month" icon={CalendarRange} options={data.options.months} selected={filters.months} onChange={setFilter('months')} />
             <MultiSelect label="Process" icon={Users} options={data.options.processes.map((p) => ({ value: p, label: p }))} selected={filters.processes} onChange={setFilter('processes')} />
             <MultiSelect label="Designation" icon={BadgeCheck} options={data.options.designations.map((d) => ({ value: d, label: d }))} selected={filters.designations} onChange={setFilter('designations')} />
-            <MultiSelect label="L1 Manager" icon={UserCog} options={data.options.managers} selected={filters.managers} onChange={setFilter('managers')} />
+            <MultiSelect label="Manager(s)" icon={UserCog} options={data.options.managers} selected={filters.managers} onChange={setFilter('managers')} />
             <MultiSelect label="Employee" icon={Users} options={data.options.employees} selected={filters.employees} onChange={setFilter('employees')} />
             <Button type="button" variant="ghost" onClick={resetFilters} className="h-10 gap-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700">
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Reset

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
-import { getDescendantIds } from '@/lib/hierarchy'
+import { getDescendantIds, getDirectReporteeIds, getManagedEmployeeIds } from '@/lib/hierarchy'
 
 const taskInclude = {
   creator: { select: { id: true, name: true, employeeCode: true, designation: true } },
@@ -33,19 +33,23 @@ export async function GET() {
 
   let visibleIds: string[]
   if (session.role === 'ADMIN') {
-    // Admin: whole non-admin org — or, under DIRECT scope, only top-level (no-manager) employees
+    // Admin: whole non-admin org — or, under DIRECT scope, only top-level
+    // (employees with no manager edge anywhere)
+    const managed = await getManagedEmployeeIds()
     const users = await db.user.findMany({
       where:
         session.teamScope === 'DIRECT'
-          ? { isActive: true, role: { not: 'ADMIN' }, managerId: null }
+          ? { isActive: true, role: { not: 'ADMIN' } }
           : { isActive: true, role: { not: 'ADMIN' } },
       select: { id: true },
     })
-    visibleIds = users.map((u) => u.id)
+    visibleIds = users
+      .map((u) => u.id)
+      .filter((id) => session.teamScope !== 'DIRECT' || !managed.has(id))
   } else {
     visibleIds =
       session.teamScope === 'DIRECT'
-        ? (await db.user.findMany({ where: { managerId: session.id, isActive: true }, select: { id: true } })).map((u) => u.id)
+        ? await getDirectReporteeIds(session.id)
         : await getDescendantIds(session.id)
   }
 
