@@ -21,9 +21,9 @@ const taskInclude = {
  * GET /api/team/tasks — tasks the viewer sees through their TEAM:
  * - manager: creator or any assignee is in the viewer's downline
  * - admin:   creator or any assignee is a non-admin employee (org scope)
- * Tasks the viewer personally created or is assigned to are EXCLUDED —
- * they already appear in the viewer's own "My Tasks" list, so the home
- * page shows each task in exactly one list.
+ * Tasks assigned to the viewer are EXCLUDED — they already appear in the
+ * viewer's own "My Tasks" list, so each task lands in exactly one list.
+ * Tasks the viewer created and assigned to the team DO appear here.
  * The "for today" window (due today + still-open overdue) is applied
  * client-side, mirroring the My Tasks roll-forward behaviour.
  */
@@ -65,11 +65,10 @@ export async function GET() {
             { assignments: { some: { userId: { in: visibleIds } } } },
           ],
         },
-        // exclude tasks I'm personally part of (already in My Tasks)
+        // Exclude tasks assigned to me — they already appear in my "My Tasks".
+        // Tasks I created for team members belong in this team feed.
         {
-          NOT: {
-            OR: [{ createdById: session.id }, { assignments: { some: { userId: session.id } } }],
-          },
+          NOT: { assignments: { some: { userId: session.id } } },
         },
       ],
     },

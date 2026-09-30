@@ -82,7 +82,9 @@ export function HomeView({
 
   const { todayTasks, upcoming, stats, statLists } = useMemo(() => {
     const all = tasks || []
-    const mine = all.filter((t) => t.assignments.some((a) => a.userId === me.id) || t.creator.id === me.id)
+    // Only tasks I'm actually assigned to belong to my personal list. Tasks I
+    // created and assigned to my team appear in "My Team Tasks for Today" instead.
+    const mine = all.filter((t) => t.assignments.some((a) => a.userId === me.id))
     const istDayOf = (iso: string) =>
       new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(new Date(iso))
     // "My tasks for today" = due today + every past-dated task still open (overdue work must be closed)
@@ -93,8 +95,6 @@ export function HomeView({
       if (d < today) {
         const myA = t.assignments.find((a) => a.userId === me.id)
         if (myA) return myA.status !== 'COMPLETED'
-        // I only created it — keep chasing until every assignee completes
-        return t.assignments.length > 0 && t.assignments.some((a) => a.status !== 'COMPLETED')
       }
       return false
     })
