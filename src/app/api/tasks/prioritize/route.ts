@@ -6,13 +6,14 @@ import { delayLabel, fmtDate, fmtTime, istToday } from '@/lib/dates'
 /**
  * POST /api/tasks/prioritize
  * AI prioritizes the signed-in user's open tasks ("every assigned task needs to be completed").
- * Configured via ZAI_BASE_URL and ZAI_API_KEY environment variables (baseUrl must include /v1).
+ * Configured via GEMINI_API_KEY (and optional GEMINI_MODEL / GEMINI_TIMEOUT_MS) environment
+ * variables; calls the Google Gemini generateContent API.
  * Falls back to a deadline-based heuristic order if the AI call fails or times out.
  * Result is cached in memory for 60s per user; body { refresh: true } bypasses the cache.
  */
 
 const CACHE_TTL_MS = 60_000
-const AI_TIMEOUT_MS = Number(process.env.ZAI_TIMEOUT_MS) || 60_000
+const AI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 60_000
 
 type PlanStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | null
 
@@ -163,27 +164,28 @@ export async function POST(req: Request) {
   const aiStart = Date.now()
 
   try {
-    const baseUrl = (process.env.ZAI_BASE_URL || '').replace(/\/+$/, '')
-    const apiKey = process.env.ZAI_API_KEY || ''
-    if (!baseUrl || !apiKey) throw new Error('ZAI_BASE_URL / ZAI_API_KEY not configured')
+    const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '')
+    const apiKey = process.env.GEMINI_API_KEY || ''
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    if (!apiKey) throw new Error('GEMINI_API_KEY not configured')
 
-    // Quick connectivity probe — separates "server cannot reach Z.ai" from a slow model.
+    // Quick connectivity probe — separates "server cannot reach Gemini" from a slow model.
     let probeStatus = 0
     try {
       const probe = await fetch(`${baseUrl}/models`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: { 'x-goog-api-key': apiKey },
         signal: AbortSignal.timeout(8_000),
       })
       probeStatus = probe.status
     } catch (e) {
       throw new Error(
-        `Z.ai unreachable from this server (GET /models failed: ${
+        `Gemini unreachable from this server (GET /models failed: ${
           e instanceof Error ? e.message : String(e)
         }, after ${Date.now() - aiStart}ms)`
       )
     }
     if (probeStatus !== 200 && probeStatus !== 401 && probeStatus !== 403) {
-      throw new Error(`Z.ai unreachable from this server (GET /models → HTTP ${probeStatus}, after ${Date.now() - aiStart}ms)`)
+      throw new Error(`Gemini unreachable from this server (GET /models → HTTP ${probeStatus}, after ${Date.now() - aiStart}ms)`)
     }
     const sys =
       "You are a strict work-prioritization assistant inside a task manager. The goal: EVERY assigned task must be completed. " +
@@ -196,39 +198,54 @@ export async function POST(req: Request) {
       'including EVERY task id exactly once, most important first.'
     const userContent = `Today is ${today} (IST). Prioritize these ${llmPayload.length} open tasks:\n${JSON.stringify(llmPayload)}`
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(`${baseUrl}/models/${model}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'X-Z-AI-From': 'Z',
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
-        model: process.env.ZAI_MODEL || 'glm-4.5-flash',
-        messages: [
-          { role: 'assistant', content: sys },
-          { role: 'user', content: userContent },
-        ],
+        systemInstruction: { parts: [{ text: sys }] },
+        contents: [{ role: 'user', parts: [{ text: userContent }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 1024,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              order: {
+                type: 'ARRAY',
+                items: {
+                  type: 'OBJECT',
+                  properties: { id: { type: 'STRING' }, reason: { type: 'STRING' } },
+                  required: ['id', 'reason'],
+                },
+              },
+            },
+            required: ['order'],
+          },
+        },
       }),
       signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     })
     if (!res.ok) {
       const bodyText = await res.text().catch(() => '')
-      throw new Error(`Z.ai request failed (${res.status}): ${bodyText.slice(0, 200)}`)
+      throw new Error(`Gemini request failed (${res.status}): ${bodyText.slice(0, 200)}`)
     }
 
-    const completion = (await res.json()) as { choices?: { message?: { content?: string } }[] }
-    const raw = completion?.choices?.[0]?.message?.content || ''
-    if (!raw) throw new Error('Z.ai returned an empty response')
+    const completion = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
+    const raw = completion?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    if (!raw) throw new Error('Gemini returned an empty response')
     const cleaned = raw.replace(/```json|```/g, '').trim()
     const start = cleaned.indexOf('{')
     const end = cleaned.lastIndexOf('}')
-    if (start === -1 || end <= start) throw new Error('Z.ai response was not JSON')
+    if (start === -1 || end <= start) throw new Error('Gemini response was not JSON')
     const parsed = JSON.parse(cleaned.slice(start, end + 1)) as {
       order?: { id?: string; reason?: string }[]
     }
     if (!Array.isArray(parsed.order) || parsed.order.length === 0) {
-      throw new Error(`Z.ai response had no "order" array: ${raw.slice(0, 200)}`)
+      throw new Error(`Gemini response had no "order" array: ${raw.slice(0, 200)}`)
     }
     const byId = new Map(items.map((t) => [t.id, t]))
     const seen = new Set<string>()
@@ -246,7 +263,7 @@ export async function POST(req: Request) {
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
       .map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) }))
     ordered = [...out, ...rest].map(strip)
-    if (out.length === 0) throw new Error(`Z.ai returned no order matching the open task ids: ${raw.slice(0, 200)}`)
+    if (out.length === 0) throw new Error(`Gemini returned no order matching the open task ids: ${raw.slice(0, 200)}`)
     source = 'ai'
   } catch (e) {
     const elapsed = Date.now() - aiStart

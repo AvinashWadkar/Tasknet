@@ -53,21 +53,21 @@ ENV DATABASE_URL=$DATABASE_URL
 ARG AUTH_SECRET="digitide-taskflow-secret-key-2024-zai"
 ENV AUTH_SECRET=$AUTH_SECRET
 
-# Z.ai API credentials for live AI task prioritization. Pass the API key at
-# build (--build-arg ZAI_API_KEY=...) or at run (-e ZAI_API_KEY=...). The key
+# Google Gemini API credentials for live AI task prioritization. Pass the API key at
+# build (--build-arg GEMINI_API_KEY=...) or at run (-e GEMINI_API_KEY=...). The key
 # is intentionally NOT hardcoded here; without it the panel falls back to
 # deadline ordering.
-ARG ZAI_BASE_URL="https://api.z.ai/api/paas/v4"
-ENV ZAI_BASE_URL=$ZAI_BASE_URL
+ARG GEMINI_BASE_URL="https://generativelanguage.googleapis.com/v1beta"
+ENV GEMINI_BASE_URL=$GEMINI_BASE_URL
 
-ARG ZAI_MODEL="glm-4.5-flash"
-ENV ZAI_MODEL=$ZAI_MODEL
+ARG GEMINI_MODEL="gemini-2.5-flash"
+ENV GEMINI_MODEL=$GEMINI_MODEL
 
-ARG ZAI_TIMEOUT_MS="60000"
-ENV ZAI_TIMEOUT_MS=$ZAI_TIMEOUT_MS
+ARG GEMINI_TIMEOUT_MS="60000"
+ENV GEMINI_TIMEOUT_MS=$GEMINI_TIMEOUT_MS
 
-ARG ZAI_API_KEY=""
-ENV ZAI_API_KEY=$ZAI_API_KEY
+ARG GEMINI_API_KEY=""
+ENV GEMINI_API_KEY=$GEMINI_API_KEY
 
 # Non-root user.
 RUN addgroup --system --gid 1001 nodejs && \

@@ -84,17 +84,17 @@ if [ -f "./next-service-dist/server.js" ]; then
     fi
     echo "🗄️  数据库: PostgreSQL ($(echo "$DATABASE_URL" | sed -E 's#postgresql://[^@]+@#postgresql://***@#'))"
 
-    # Z.ai API credentials for live AI task prioritization. Override them in the
-    # runtime environment if needed; the API key is intentionally NOT hardcoded
-    # here, so without it the panel falls back to deadline ordering.
-    export ZAI_BASE_URL="${ZAI_BASE_URL:-https://api.z.ai/api/paas/v4}"
-    export ZAI_MODEL="${ZAI_MODEL:-glm-4.5-flash}"
-    export ZAI_TIMEOUT_MS="${ZAI_TIMEOUT_MS:-60000}"
-    export ZAI_API_KEY="${ZAI_API_KEY:-}"
-    if [ -n "$ZAI_API_KEY" ]; then
-        echo "🤖 已启用 Z.ai AI 任务优先级排序 (模型: $ZAI_MODEL)"
+    # Google Gemini API credentials for live AI task prioritization. Override them
+    # in the runtime environment if needed; the API key is intentionally NOT
+    # hardcoded here, so without it the panel falls back to deadline ordering.
+    export GEMINI_BASE_URL="${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}"
+    export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
+    export GEMINI_TIMEOUT_MS="${GEMINI_TIMEOUT_MS:-60000}"
+    export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+    if [ -n "$GEMINI_API_KEY" ]; then
+        echo "🤖 已启用 Gemini AI 任务优先级排序 (模型: $GEMINI_MODEL)"
     else
-        echo "⚠️  未设置 ZAI_API_KEY，AI 任务优先级排序不可用，将使用截止日期回退排序"
+        echo "⚠️  未设置 GEMINI_API_KEY，AI 任务优先级排序不可用，将使用截止日期回退排序"
     fi
 
     # 数据库结构在部署构建阶段（database-runtime-build.sh）已同步到 PostgreSQL，
