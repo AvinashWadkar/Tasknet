@@ -88,7 +88,7 @@ if [ -f "./next-service-dist/server.js" ]; then
     # in the runtime environment if needed; the API key is intentionally NOT
     # hardcoded here, so without it the panel falls back to deadline ordering.
     export GEMINI_BASE_URL="${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}"
-    export GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
+    export GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.1-flash-lite}"
     export GEMINI_TIMEOUT_MS="${GEMINI_TIMEOUT_MS:-60000}"
     export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
     if [ -n "$GEMINI_API_KEY" ]; then

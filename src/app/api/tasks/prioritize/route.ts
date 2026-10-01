@@ -166,7 +166,7 @@ export async function POST(req: Request) {
   try {
     const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '')
     const apiKey = process.env.GEMINI_API_KEY || ''
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+    const model = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite'
     if (!apiKey) throw new Error('GEMINI_API_KEY not configured')
 
     // Quick connectivity probe — separates "server cannot reach Gemini" from a slow model.
