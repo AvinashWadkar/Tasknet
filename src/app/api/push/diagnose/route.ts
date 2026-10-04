@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { isPushConfigured, sendPushToUsers } from '@/lib/webpush'
-import { isFcmConfigured } from '@/lib/fcm'
+import { checkFcmConfig } from '@/lib/fcm'
 
 /**
  * POST /api/push/diagnose — send a test native push to the current user and
@@ -18,12 +18,20 @@ export async function POST() {
   }
 
   const web = isPushConfigured()
-  const fcm = isFcmConfigured()
+  const fcmCheck = checkFcmConfig()
+  const fcm = fcmCheck.configured
+  const appChannel = () => ({
+    registered: devices.length,
+    configured: fcm,
+    ...(fcmCheck.problem ? { problem: fcmCheck.problem } : {}),
+  })
   if (!web && !fcm) {
     return NextResponse.json({
       ok: false,
       reason: 'vapid-not-configured',
       message: 'This server has no push credentials configured (VAPID keys for the web, Firebase for the app).',
+      web: { registered: 0, configured: web },
+      app: appChannel(),
     })
   }
 
@@ -35,8 +43,8 @@ export async function POST() {
       reason: 'no-subscription',
       message:
         'This device is not registered for push. On the website: allow notifications and reload. On the Android app: sign in once after installing.',
-      web: { registered: 0, configured: web },
-      app: { registered: 0, configured: fcm },
+      web: { registered: subs.length, configured: web },
+      app: appChannel(),
     })
   }
 
@@ -50,7 +58,7 @@ export async function POST() {
   const detail = {
     channel: devices.length > 0 ? 'app' : 'web',
     web: { registered: subs.length, configured: web },
-    app: { registered: devices.length, configured: fcm },
+    app: appChannel(),
   }
 
   if (dispatch.dispatched === 0) {

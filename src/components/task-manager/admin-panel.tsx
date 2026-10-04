@@ -44,6 +44,7 @@ import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
   Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone, FilterX, Filter,
+  BellRing, CheckCircle2, AlertTriangle, Globe, Smartphone,
   Check, ChevronDown, X,
 } from 'lucide-react'
 
@@ -295,6 +296,51 @@ const EMPTY = {
 
 const EDIT_EMPTY = { ...EMPTY, role: 'EMPLOYEE' }
 
+type PushCheckResult = {
+  ok: boolean
+  reason?: string
+  message?: string
+  channel?: 'web' | 'app'
+  sent?: number
+  web?: { registered: number; configured: boolean }
+  app?: { registered: number; configured: boolean; problem?: string }
+}
+
+/** One channel's health inside the push check card. */
+function PushChannelStatus({
+  title,
+  icon,
+  registered,
+  configured,
+  configuredHint,
+}: {
+  title: string
+  icon: React.ReactNode
+  registered: number
+  configured: boolean
+  configuredHint?: string | null
+}) {
+  const healthy = configured && registered > 0
+  return (
+    <div className={cn('rounded-lg border p-3', healthy ? 'border-emerald-200 bg-emerald-50/60' : 'border-amber-200 bg-amber-50/60')}>
+      <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+        {icon}
+        {title}
+        <span className="ml-auto text-xs text-slate-500">
+          {registered} device{registered === 1 ? '' : 's'}
+        </span>
+      </div>
+      <p className="mt-1.5 text-xs text-slate-600">
+        {!configured
+          ? (configuredHint ?? 'Credentials are not configured on the server.')
+          : registered === 0
+            ? 'Server is ready, but this device is not registered. Sign in here again to register it.'
+            : 'Ready and registered on this device.'}
+      </p>
+    </div>
+  )
+}
+
 /** Masked password with per-row reveal + copy — visible to the admin only. */
 function PasswordCell({ password }: { password?: string | null }) {
   const { toast } = useToast()
@@ -432,6 +478,8 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
   // Send-notification dialog state
   const [sendOpen, setSendOpen] = useState(false)
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushResult, setPushResult] = useState<PushCheckResult | null>(null)
 
   async function loadUsers() {
     try {
@@ -680,6 +728,23 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     { key: 'designation', label: 'Designation', required: true },
   ]
 
+  /** Sends a real test push to the admin's own devices and reports the result. */
+  async function checkPush() {
+    setPushBusy(true)
+    try {
+      const res = await fetch('/api/push/diagnose', { method: 'POST' })
+      setPushResult((await res.json()) as PushCheckResult)
+    } catch {
+      setPushResult({
+        ok: false,
+        reason: 'network',
+        message: 'Could not reach the server. Check your connection and try again.',
+      })
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -689,10 +754,58 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
           </h2>
           <p className="text-sm text-slate-500">Only you can create employee IDs. Pick one or more managers (all equal) — employees with no manager are top level.</p>
         </div>
-        <Button type="button" onClick={() => setSendOpen(true)} className="shrink-0">
-          <Megaphone className="mr-2 h-4 w-4" /> Send Notification
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0">
+          <Button type="button" variant="outline" onClick={checkPush} disabled={pushBusy} className="shrink-0">
+            {pushBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BellRing className="mr-2 h-4 w-4" />}
+            Check Push Notification
+          </Button>
+          <Button type="button" onClick={() => setSendOpen(true)} className="shrink-0">
+            <Megaphone className="mr-2 h-4 w-4" /> Send Notification
+          </Button>
+        </div>
       </div>
+
+      {pushResult && (
+        <Card className="border-slate-200/80 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              {pushResult.ok ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+              )}
+              Push notification check
+            </CardTitle>
+            <CardDescription>
+              {pushResult.ok
+                ? `Delivered over the ${pushResult.channel === 'app' ? 'Android app' : 'web'} channel. Check the notification on this device.`
+                : pushResult.message}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <PushChannelStatus
+                title="Website (browser)"
+                icon={<Globe className="h-4 w-4 text-slate-500" />}
+                registered={pushResult.web?.registered ?? 0}
+                configured={pushResult.web?.configured ?? false}
+                configuredHint="Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT on the server."
+              />
+              <PushChannelStatus
+                title="Android app (FCM)"
+                icon={<Smartphone className="h-4 w-4 text-slate-500" />}
+                registered={pushResult.app?.registered ?? 0}
+                configured={pushResult.app?.configured ?? false}
+                configuredHint={pushResult.app?.problem}
+              />
+            </div>
+            <p className="text-xs text-slate-500">
+              Alerts go to the Android app when a device is registered there, and to the browser
+              otherwise — so nobody receives the same notification twice.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-5">
         {/* Create user */}

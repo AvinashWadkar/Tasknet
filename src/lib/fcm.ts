@@ -14,6 +14,16 @@ import { getMessaging, type Messaging } from 'firebase-admin/messaging'
 
 type ServiceAccount = { projectId: string; clientEmail: string; privateKey: string }
 
+/** The service account JSON as Firebase Console downloads it uses snake_case keys. */
+type RawServiceAccount = {
+  projectId?: string
+  clientEmail?: string
+  privateKey?: string
+  project_id?: string
+  client_email?: string
+  private_key?: string
+}
+
 let cached: Messaging | null = null
 let attempted = false
 
@@ -22,18 +32,65 @@ function readServiceAccount(): ServiceAccount | null {
   if (!raw) return null
   try {
     const json = raw.trim().startsWith('{') ? raw : Buffer.from(raw.trim(), 'base64').toString('utf8')
-    const parsed = JSON.parse(json) as ServiceAccount
-    if (!parsed.projectId || !parsed.clientEmail || !parsed.privateKey) return null
-    return parsed
+    const parsed = JSON.parse(json) as RawServiceAccount
+    // Accept both shapes: the downloaded file is snake_case, while the
+    // firebase-admin docs use camelCase.
+    const projectId = parsed.projectId ?? parsed.project_id
+    const clientEmail = parsed.clientEmail ?? parsed.client_email
+    const privateKey = parsed.privateKey ?? parsed.private_key
+    if (!projectId || !clientEmail || !privateKey) return null
+    return { projectId, clientEmail, privateKey }
   } catch {
     console.error('[fcm] FIREBASE_SERVICE_ACCOUNT_JSON is set but could not be parsed')
     return null
   }
 }
 
+export type FcmConfigCheck = {
+  configured: boolean
+  /** Short, secret-free reason shown to admins. Never contains key material. */
+  problem?: string
+}
+
+/**
+ * Explain the Firebase configuration state in plain language so the admin panel
+ * can say what to fix instead of only reporting "not configured".
+ */
+export function checkFcmConfig(): FcmConfigCheck {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  if (!raw) {
+    return {
+      configured: false,
+      problem: 'FIREBASE_SERVICE_ACCOUNT_JSON is not set on this server. Add it in Render and redeploy.',
+    }
+  }
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('{') && !/^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)) {
+    return {
+      configured: false,
+      problem: 'FIREBASE_SERVICE_ACCOUNT_JSON is neither raw JSON nor base64. Paste the service account JSON, or base64-encode it.',
+    }
+  }
+  const sa = readServiceAccount()
+  if (!sa) {
+    return {
+      configured: false,
+      problem: 'FIREBASE_SERVICE_ACCOUNT_JSON could not be read as a service account. It must contain project_id, client_email and private_key (the file Firebase Console gives you).',
+    }
+  }
+  const messagingClient = messaging()
+  if (!messagingClient) {
+    return {
+      configured: false,
+      problem: `Firebase rejected the credentials for project "${sa.projectId}". Check that the service account belongs to this project and the private key is complete.`,
+    }
+  }
+  return { configured: true }
+}
+
 /** Whether the server runtime holds usable Firebase credentials. */
 export function isFcmConfigured(): boolean {
-  return readServiceAccount() !== null
+  return checkFcmConfig().configured
 }
 
 function messaging(): Messaging | null {
