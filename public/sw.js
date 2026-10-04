@@ -10,8 +10,8 @@ self.addEventListener('push', (event) => {
   const title = payload.title || 'Tasknet'
   const options = {
     body: payload.body || '',
-    icon: payload.icon || '/icon.png',
-    badge: payload.badge || '/icon.png',
+    icon: payload.icon || '/icon-192.png',
+    badge: payload.badge || '/badge.png',
     tag: payload.tag || 'tasknet',
     renotify: true,
     data: { url: payload.url || '/', taskId: payload.taskId || null },

@@ -21,6 +21,11 @@ $env:ANDROID_HOME = $sdk
 $env:ANDROID_SDK_ROOT = $sdk
 $env:PATH = "$jbr\bin;$env:PATH"
 
+# Launcher + notification icons live in the git-ignored android/ project, so
+# regenerate them from the master logo before every build.
+node .zscripts\generate-icons.mjs | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'icon generation failed' }
+
 Push-Location android
 try {
   # Push local code changes into the native project, then build the signed APK.
