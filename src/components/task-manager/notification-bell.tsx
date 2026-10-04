@@ -13,7 +13,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import { api } from './api'
-import { subscribeForPush } from './push-client'
+import { isNativeApp, subscribeForNativePush, subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
 import { PushTestDialog } from './push-test-dialog'
 import { AlertTriangle, Bell, BellRing, CheckCheck, MessageSquarePlus, Send, Trash2 } from 'lucide-react'
@@ -108,9 +108,12 @@ export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId:
   // Register the service worker + web-push subscription once permission is granted,
   // and re-subscribe whenever the permission status changes to "granted".
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+    if (typeof window === 'undefined') return
+    if (!isNativeApp() && !('serviceWorker' in navigator)) return
     const trySubscribe = () => {
-      if ('Notification' in window && Notification.permission === 'granted') {
+      // Inside the APK there is no Notification/PushManager API — FCM owns permission
+      // and registration there, so ask it directly instead of gating on the browser API.
+      if (isNativeApp() || ('Notification' in window && Notification.permission === 'granted')) {
         void subscribeForPush().then(setPushRegistered)
       }
     }
@@ -126,6 +129,19 @@ export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId:
   }, [])
 
   async function enableNotifications() {
+    // The app requests the Android permission and registers its FCM token.
+    if (isNativeApp()) {
+      await subscribeForNativePush().then(async (ok) => {
+        setPushRegistered(ok)
+        toast({
+          title: ok ? 'Notifications enabled' : 'Could not enable notifications',
+          description: ok
+            ? 'You will get an alert when a task is assigned to you.'
+            : 'Check that notifications are allowed for Tasknet in your phone settings, then try again.',
+        })
+      })
+      return
+    }
     if (!('Notification' in window)) {
       toast({ title: 'Notifications not supported', description: 'Your browser does not support notifications.' })
       return

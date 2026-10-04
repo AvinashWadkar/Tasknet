@@ -34,7 +34,8 @@ interface WorkItem extends PlanItem {
   dueDay: string
 }
 
-const cache = new Map<string, { ts: number; source: 'ai' | 'fallback'; plan: PlanItem[]; aiError?: string }>()
+// Details of any AI failure stay in server logs only — the client is told nothing beyond the source
+const cache = new Map<string, { ts: number; source: 'ai' | 'fallback'; plan: PlanItem[] }>()
 
 function strip(t: WorkItem): PlanItem {
   return {
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
   if (!refresh) {
     const hit = cache.get(session.id)
     if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
-      return NextResponse.json({ source: hit.source, plan: hit.plan, cached: true, aiError: hit.aiError })
+      return NextResponse.json({ source: hit.source, plan: hit.plan, cached: true })
     }
   }
 
@@ -160,7 +161,6 @@ export async function POST(req: Request) {
 
   let source: 'ai' | 'fallback' = 'fallback'
   let ordered: PlanItem[] = []
-  let aiError: string | undefined
   const aiStart = Date.now()
 
   try {
@@ -267,14 +267,14 @@ export async function POST(req: Request) {
     source = 'ai'
   } catch (e) {
     const elapsed = Date.now() - aiStart
-    aiError = `${e instanceof Error ? e.message : String(e)} (after ${elapsed}ms)`
-    console.warn('[prioritize] AI ordering unavailable, using deadline fallback:', aiError)
+    const detail = `${e instanceof Error ? e.message : String(e)} (after ${elapsed}ms)`
+    console.warn('[prioritize] AI ordering unavailable, using deadline fallback:', detail)
   }
 
   if (ordered.length === 0) {
     ordered = fallbackOrder(items.map((t) => ({ ...t, reason: fallbackReason({ ...t, today }) })))
   }
 
-  cache.set(session.id, { ts: Date.now(), source, plan: ordered, aiError })
-  return NextResponse.json({ source, plan: ordered, aiError })
+  cache.set(session.id, { ts: Date.now(), source, plan: ordered })
+  return NextResponse.json({ source, plan: ordered })
 }

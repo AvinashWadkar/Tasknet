@@ -14,6 +14,8 @@ import { Sparkles, RefreshCw, AlarmClock, Users, Flag, PartyPopper } from 'lucid
  * Smart Priority — ranks every open task assigned to / created by the user
  * and suggests the order to work on them ("every assigned task must be completed").
  */
+const GENERIC_ERROR = "It looks like something went wrong. Let's try again."
+
 export function SmartPriorityPanel({
   me,
   refreshKey,
@@ -32,7 +34,7 @@ export function SmartPriorityPanel({
   // Initial + parent-triggered load (silent refresh); Refresh sets its own loading state
   useEffect(() => {
     let alive = true
-    api<{ source: 'ai' | 'fallback'; plan: PriorityItem[]; aiError?: string }>('/api/tasks/prioritize', {
+    api<{ source: 'ai' | 'fallback'; plan: PriorityItem[] }>('/api/tasks/prioritize', {
       method: 'POST',
       body: JSON.stringify({ refresh: reloadKey > 0 }),
     })
@@ -40,11 +42,11 @@ export function SmartPriorityPanel({
         if (!alive) return
         setPlan(r.plan)
         setSource(r.source)
-        setError(r.source === 'fallback' && r.aiError ? r.aiError : null)
+        setError(r.source === 'fallback' ? GENERIC_ERROR : null)
       })
-      .catch((e) => {
+      .catch(() => {
         if (!alive) return
-        setError(e instanceof Error ? e.message : 'Could not build priority plan')
+        setError(GENERIC_ERROR)
       })
       .finally(() => {
         if (alive) setLoading(false)

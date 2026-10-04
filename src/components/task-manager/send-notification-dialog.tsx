@@ -58,9 +58,11 @@ const PUSH_STEPS: Record<string, string[]> = {
 
 function pushIssue(w?: PushDispatch): keyof typeof PUSH_STEPS | null {
   if (!w) return null
-  if (!w.configured) return 'no-config'
-  if (w.subscriptions === 0) return 'no-subs'
-  if (w.failures > 0 || w.dispatched < w.subscriptions) return 'failures'
+  // Either channel can carry the alert: the app is preferred when installed.
+  if (!w.configured && !w.fcmConfigured) return 'no-config'
+  const targeted = w.subscriptions + w.devices
+  if (targeted === 0) return 'no-subs'
+  if (w.failures > 0 || w.dispatched < targeted) return 'failures'
   return null
 }
 

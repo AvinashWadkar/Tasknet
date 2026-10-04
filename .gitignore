@@ -54,3 +54,13 @@ server.log
 /skills/
 # SQLite (migrated to PostgreSQL/Neon)
 db/
+
+# Capacitor Android (regenerate with: npx cap add android)
+/android/
+/android/keystore.properties
+*.apk
+
+# Release signing keystore (never commit)
+*.p12
+*.jks
+*.keystore

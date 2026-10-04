@@ -21,6 +21,7 @@ import { ReportsView } from './reports-view'
 import { AdminPanel } from './admin-panel'
 import { NotificationBell } from './notification-bell'
 import { NotificationGate } from './notification-gate'
+import { unsubscribeForNativePush } from './push-client'
 import { NewTaskDialog } from './new-task-dialog'
 import { TaskDetailDialog } from './task-detail-dialog'
 import { InitialAvatar } from './shared'
@@ -127,6 +128,9 @@ export function TaskManagerApp() {
 
   async function logout() {
     try {
+      // Release this device first: the APK's FCM token is tied to the signed-in
+      // employee, so the next person to sign in here must not inherit their alerts.
+      await unsubscribeForNativePush()
       await api('/api/auth/logout', { method: 'POST' })
     } finally {
       setMe(null)
