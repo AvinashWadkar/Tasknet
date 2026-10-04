@@ -59,6 +59,8 @@ db/
 /android/
 /android/keystore.properties
 *.apk
+# ...except the installer served by the site, so the download button works
+!public/Tasknet-v1.0.apk
 
 # Release signing keystore (never commit)
 *.p12

@@ -20,6 +20,7 @@ import { TeamView } from './team-view'
 import { ReportsView } from './reports-view'
 import { AdminPanel } from './admin-panel'
 import { NotificationBell } from './notification-bell'
+import { AppDownloadButton } from './app-download-button'
 import { NotificationGate } from './notification-gate'
 import { unsubscribeForNativePush } from './push-client'
 import { NewTaskDialog } from './new-task-dialog'
@@ -256,6 +257,7 @@ export function TaskManagerApp() {
                       <Plus className="mr-1.5 h-4 w-4" /> New Task
                     </Button>
                   )}
+                  <AppDownloadButton variant="block" className="mt-3" />
                 </div>
               </SheetContent>
             </Sheet>
@@ -299,25 +301,28 @@ export function TaskManagerApp() {
 
         {/* Nav tabs (tablet/desktop only — mobile uses the drawer above) */}
         <nav className="mx-auto hidden max-w-7xl px-4 pb-2 md:block" aria-label="Main navigation">
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-            {navItems
-              .filter((n) => n.show)
-              .map((n) => (
-                <button
-                  key={n.key}
-                  onClick={() => setView(n.key)}
-                  aria-current={view === n.key ? 'page' : undefined}
-                  className={cn(
-                    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition',
-                    view === n.key
-                      ? 'bg-brand-600 text-white shadow-sm shadow-brand-200'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  )}
-                >
-                  <n.icon className="h-4 w-4" />
-                  {n.label}
-                </button>
-              ))}
+          <div className="flex items-center gap-1.5">
+            <div className="flex flex-1 gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
+              {navItems
+                .filter((n) => n.show)
+                .map((n) => (
+                  <button
+                    key={n.key}
+                    onClick={() => setView(n.key)}
+                    aria-current={view === n.key ? 'page' : undefined}
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition',
+                      view === n.key
+                        ? 'bg-brand-600 text-white shadow-sm shadow-brand-200'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    )}
+                  >
+                    <n.icon className="h-4 w-4" />
+                    {n.label}
+                  </button>
+                ))}
+            </div>
+            <AppDownloadButton className="shrink-0" />
           </div>
         </nav>
       </header>

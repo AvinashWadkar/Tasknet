@@ -13,6 +13,7 @@ import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDat
 import type { Me, TaskDTO } from './types'
 import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, PartyPopper, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound } from 'lucide-react'
 import { initialsOf, viewerStatus } from './shared'
+import { AppDownloadButton } from './app-download-button'
 import { Button } from '@/components/ui/button'
 
 export function HomeView({
@@ -540,6 +541,9 @@ export function HomeView({
           </div>
         </section>
       )}
+
+      {/* Install prompt — hidden when this is already the Android app */}
+      <AppDownloadButton variant="block" className="mt-6" />
 
       {busyId && (
         <div className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2">

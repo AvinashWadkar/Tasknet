@@ -1,6 +1,7 @@
 'use client'
 
 import { api } from './api'
+import { isNativeApp } from '@/lib/native'
 
 export const VAPID_PUBLIC_KEY =
   'BKhIUG2m1B-QieBdWUOHq3do4yOsFrfkMuwXL9U3DNYQQcCV55zSNTWuu7yY88th98DoG9jpNji_uGGeXhha7oI'
@@ -30,13 +31,6 @@ function arrayBufferToBase64Url(buffer: ArrayBuffer | null): string {
 function toHex(value: ArrayBuffer | Uint8Array): string {
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value)
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/** True when running inside the Capacitor Android shell (WebView). */
-export function isNativeApp(): boolean {
-  if (typeof window === 'undefined') return false
-  const c = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }
-  return c.Capacitor?.isNativePlatform?.() === true
 }
 
 /**
