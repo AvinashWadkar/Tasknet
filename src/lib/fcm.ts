@@ -27,11 +27,52 @@ type RawServiceAccount = {
 let cached: Messaging | null = null
 let attempted = false
 
-function readServiceAccount(): ServiceAccount | null {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-  if (!raw) return null
+/**
+ * Turn the env var into a list of strings that might be the service account
+ * JSON. Env values get mangled in predictable ways (a pasted variable name,
+ * wrapping quotes, a BOM, URL-safe base64, stray spaces), and none of those
+ * should stop delivery, so every plausible shape is tried.
+ *
+ * Every reading is *added* rather than substituted, because the heuristics are
+ * ambiguous: base64 padding means a plain base64 blob ends in "=", which also
+ * looks like a "NAME=value" line. Nothing that arrives is ever discarded.
+ */
+function candidatePayloads(raw: string): string[] {
+  const out: string[] = []
+  const add = (s: string | undefined | null) => {
+    const t = (s ?? '').trim().replace(/^\uFEFF/, '')
+    if (t && !out.includes(t)) out.push(t)
+  }
+
+  const start = raw.trim().replace(/^\uFEFF/, '')
+  add(start)
+
+  // Quotes added by the shell or the dashboard.
+  if (start.length > 1 && ((start.startsWith('"') && start.endsWith('"')) || (start.startsWith("'") && start.endsWith("'")))) {
+    add(start.slice(1, -1))
+  }
+  // A whole "NAME=value" line pasted into the value box.
+  const named = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]+)$/.exec(start)
+  if (named) add(named[2])
+
+  // Finally, treat each of those as base64: standard or URL-safe, on one line
+  // or wrapped, since some dashboards insert line breaks.
+  for (const text of [...out]) {
+    const compact = text.replace(/\s+/g, '')
+    if (compact.length <= 16 || !/^[A-Za-z0-9+/\-_]+={0,2}$/.test(compact)) continue
+    const standard = compact.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = standard.padEnd(Math.ceil(standard.length / 4) * 4, '=')
+    try {
+      add(Buffer.from(padded, 'base64').toString('utf8'))
+    } catch {
+      /* not base64 after all */
+    }
+  }
+  return out
+}
+
+function parseServiceAccount(json: string): ServiceAccount | null {
   try {
-    const json = raw.trim().startsWith('{') ? raw : Buffer.from(raw.trim(), 'base64').toString('utf8')
     const parsed = JSON.parse(json) as RawServiceAccount
     // Accept both shapes: the downloaded file is snake_case, while the
     // firebase-admin docs use camelCase.
@@ -41,9 +82,19 @@ function readServiceAccount(): ServiceAccount | null {
     if (!projectId || !clientEmail || !privateKey) return null
     return { projectId, clientEmail, privateKey }
   } catch {
-    console.error('[fcm] FIREBASE_SERVICE_ACCOUNT_JSON is set but could not be parsed')
     return null
   }
+}
+
+function readServiceAccount(): ServiceAccount | null {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  if (!raw) return null
+  for (const payload of candidatePayloads(raw)) {
+    const sa = parseServiceAccount(payload)
+    if (sa) return sa
+  }
+  console.error('[fcm] FIREBASE_SERVICE_ACCOUNT_JSON is set but could not be read as a service account')
+  return null
 }
 
 export type FcmConfigCheck = {
@@ -65,17 +116,27 @@ export function checkFcmConfig(): FcmConfigCheck {
     }
   }
   const trimmed = raw.trim()
-  if (!trimmed.startsWith('{') && !/^[A-Za-z0-9+/=\r\n]+$/.test(trimmed)) {
-    return {
-      configured: false,
-      problem: 'FIREBASE_SERVICE_ACCOUNT_JSON is neither raw JSON nor base64. Paste the service account JSON, or base64-encode it.',
-    }
-  }
   const sa = readServiceAccount()
   if (!sa) {
+    // The most common mistake: pasting where the file is, not what is in it.
+    if (!trimmed.includes('{') && /[\\/]|\.json$/i.test(trimmed)) {
+      return {
+        configured: false,
+        problem:
+          'FIREBASE_SERVICE_ACCOUNT_JSON looks like a file path, but the server needs the file contents. Paste the JSON itself, or base64-encode the file.',
+      }
+    }
+    if (trimmed.includes('{')) {
+      return {
+        configured: false,
+        problem:
+          'FIREBASE_SERVICE_ACCOUNT_JSON starts like JSON but could not be read. It must be one complete object containing project_id, client_email and private_key — check for a truncated paste.',
+      }
+    }
     return {
       configured: false,
-      problem: 'FIREBASE_SERVICE_ACCOUNT_JSON could not be read as a service account. It must contain project_id, client_email and private_key (the file Firebase Console gives you).',
+      problem:
+        'FIREBASE_SERVICE_ACCOUNT_JSON is not readable as JSON or base64. Paste the downloaded service account JSON as-is, or base64-encode the file and paste that.',
     }
   }
   const messagingClient = messaging()
