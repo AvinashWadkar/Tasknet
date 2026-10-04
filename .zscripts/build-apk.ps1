@@ -26,6 +26,10 @@ $env:PATH = "$jbr\bin;$env:PATH"
 node .zscripts\generate-icons.mjs | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'icon generation failed' }
 
+# Catch an off-centre or empty icon here rather than shipping it.
+node .zscripts\verify-icons.mjs
+if ($LASTEXITCODE -ne 0) { throw 'icon verification failed' }
+
 Push-Location android
 try {
   # Push local code changes into the native project, then build the signed APK.

@@ -126,29 +126,27 @@ async function silhouette(size, colour = WHITE, scale = 1) {
     .toBuffer()
 }
 
-function roundedMask(size, radiusRatio = 0.22) {
-  const radius = Math.round(size * radiusRatio)
-  return Buffer.from(
-    `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">` +
-      `<rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="#fff"/></svg>`,
-  )
-}
-
 /**
  * Brand icon: navy rounded square with the mark centred. The mark is scaled
  * rather than cropped from the source tile, so its size in the icon stays
  * under our control instead of inheriting the source's tight framing.
  */
 async function tile(size, markScale = SCALES.tile) {
+  // silhouette() already returns a centred size x size layer. Offsetting it a
+  // second time pushes the mark into the bottom-right corner and clips it.
   const logo = await silhouette(size, WHITE, markScale)
-  const offset = Math.floor((size - Math.round(size * markScale)) / 2)
+  const radius = Math.round(size * 0.22)
   return sharp({
     create: { width: size, height: size, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
   })
     .composite([
-      { input: roundedMask(size), blend: 'dest-in' },
-      { input: Buffer.from(`<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"><rect width="${size}" height="${size}" rx="${Math.round(size * 0.22)}" ry="${Math.round(size * 0.22)}" fill="${NAVY}"/></svg>`) },
-      { input: logo, left: offset, top: offset },
+      {
+        input: Buffer.from(
+          `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">` +
+            `<rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="${NAVY}"/></svg>`,
+        ),
+      },
+      { input: logo, left: 0, top: 0 },
     ])
     .png()
     .toBuffer()
