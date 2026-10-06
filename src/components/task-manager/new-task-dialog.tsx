@@ -153,7 +153,7 @@ export function NewTaskDialog({
           <DialogDescription>Assign a task to one or more employees — everyone assigned can track it together.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 [scrollbar-width:thin]">
+        <form id="new-task-form" onSubmit={submit} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1 [scrollbar-width:thin]">
           <div className="space-y-2">
             <Label htmlFor="t-title">Task title *</Label>
             <Input id="t-title" placeholder="e.g. Prepare daily MIS report" value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -164,7 +164,7 @@ export function NewTaskDialog({
             <Textarea id="t-desc" placeholder="Add details, links or instructions…" value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="t-date">Due date *</Label>
               <Input id="t-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
@@ -426,17 +426,17 @@ export function NewTaskDialog({
               {error}
             </div>
           )}
-
-          <DialogFooter className="border-t border-slate-100 pt-3">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-              Create & Assign
-            </Button>
-          </DialogFooter>
         </form>
+
+        <DialogFooter className="shrink-0 border-t border-slate-100 pt-3">
+          <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" form="new-task-form" disabled={busy}>
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+            Create & Assign
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
