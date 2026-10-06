@@ -59,8 +59,11 @@ db/
 /android/
 /android/keystore.properties
 *.apk
-# ...except the installer served by the site, so the download button works
-!public/Tasknet-v1.0.apk
+# ...except the released installer, which is tracked in android-app/ and copied
+# into public/download at build time
+!android-app/*.apk
+# public/download/ is build output, not source
+public/download/
 
 # Release signing keystore (never commit)
 *.p12

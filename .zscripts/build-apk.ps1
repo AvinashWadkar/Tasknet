@@ -41,4 +41,11 @@ try {
 finally { Pop-Location }
 
 $apk = 'android\app\build\outputs\apk\release\app-release.apk'
+
+# Publish into android-app/, the single place the released installer is tracked.
+# The Docker build copies it into public/download so the site's button can serve it.
+if (-not (Test-Path 'android-app')) { New-Item -ItemType Directory -Path 'android-app' | Out-Null }
+Copy-Item $apk 'android-app\Tasknet-v1.0.apk' -Force
+
 Write-Host "`nAPK: $((Resolve-Path $apk).Path) ($([math]::Round((Get-Item $apk).Length / 1MB, 2)) MB)" -ForegroundColor Green
+Write-Host "Published: $((Resolve-Path 'android-app\Tasknet-v1.0.apk').Path)" -ForegroundColor Green

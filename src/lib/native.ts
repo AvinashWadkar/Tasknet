@@ -14,12 +14,12 @@ export function isNativeApp(): boolean {
 }
 
 /**
- * Where the Android installer lives. Defaults to the copy served by this site
- * so the button works without any external hosting; point
- * NEXT_PUBLIC_APK_URL at a GitHub release or CDN to serve the APK from
- * somewhere else.
+ * Where the Android installer lives. The APK is kept in android-app/ in the repo
+ * and published under /download by the Docker build, so the button works without
+ * external hosting; point NEXT_PUBLIC_APK_URL at a GitHub release or CDN to
+ * serve it from somewhere else.
  */
 export function apkUrl(): string {
   const configured = process.env.NEXT_PUBLIC_APK_URL
-  return (configured && configured.trim()) || '/Tasknet-v1.0.apk'
+  return (configured && configured.trim()) || '/download/Tasknet-v1.0.apk'
 }

@@ -25,6 +25,12 @@ COPY . .
 ENV NEXT_PUBLIC_APP_URL=""
 RUN bun run build
 
+# The released installer lives in android-app/ rather than public/, so the site
+# can version it separately from the web assets. Next only serves what is inside
+# public/, so publish it there for the download button to reach it.
+RUN mkdir -p public/download && \
+    cp -f android-app/*.apk public/download/ 2>/dev/null || true
+
 # Assemble the standalone server dir (mirrors the package.json build script).
 RUN cp -r .next/static .next/standalone/.next/ && \
     cp -r public .next/standalone/
