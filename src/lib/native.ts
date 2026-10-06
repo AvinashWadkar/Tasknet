@@ -14,7 +14,7 @@ export function isNativeApp(): boolean {
 }
 
 /** The current app version. Bump when publishing a new APK. */
-export const APP_VERSION = '1.1'
+export const APP_VERSION = '1.2'
 
 /**
  * Where the Android installer lives. Builds are kept in android-app/ in the repo

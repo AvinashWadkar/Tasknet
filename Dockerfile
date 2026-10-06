@@ -28,7 +28,7 @@ ENV NEXT_PUBLIC_APP_URL=""
 # those routes during the build, so publish them BEFORE building - a file copied
 # in afterwards is served as a 404.
 RUN mkdir -p public/download && \
-    cp -f android-app/*.apk public/download/ && \
+    cp -f android-app/*.apk android-app/latest.json public/download/ && \
     ls -1 public/download/
 
 # Build the app (output: standalone).

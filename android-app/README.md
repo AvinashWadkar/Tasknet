@@ -5,8 +5,10 @@ assets in `public/`.
 
 | File | Purpose |
 | --- | --- |
-| `Tasknet-v1.1.apk` | Current release. Signed; install it directly on a phone. |
-| `Tasknet-v1.0.apk` | Previous release, kept so devices already on v1.0 can be updated. |
+| `latest.json` | Release manifest the app reads to detect a newer build. Regenerated on every build. |
+| `Tasknet-v1.2.apk` | Current release. Signed; install it directly on a phone. |
+| `Tasknet-v1.1.apk` | Previous release, kept so devices on v1.1 can be updated. |
+| `Tasknet-v1.0.apk` | Previous release, kept so devices on v1.0 can be updated. |
 
 Every build is kept here under `Tasknet-v<version>.apk`. Nothing is overwritten or
 deleted, so any version can be downloaded and installed directly.
@@ -20,6 +22,24 @@ deleted, so any version can be downloaded and installed directly.
 The script regenerates the app icons from the master logo, verifies them, builds
 the signed APK through Gradle, and publishes the result to this folder as
 `Tasknet-v1.0.apk`. Replace the file here and commit it to publish a new build.
+
+## In-app update check
+
+On every launch the app fetches `latest.json` (from the site, falling back to the
+raw GitHub URL) and compares `versionCode` against its own. If the published
+build is newer it shows an **Update available** dialog; tapping **Update**
+downloads the APK through `DownloadManager` and hands it to the system installer
+once the download finishes.
+
+Two things this depends on:
+
+- `versionCode` must keep increasing, or Android refuses the upgrade.
+- `latest.json` must be regenerated and committed with each build. `build-apk.ps1`
+  writes it automatically, so a forgotten manifest means no update prompt.
+
+The app needs "install unknown apps" the first time. It asks via the system
+prompt; if that is refused it sends the user to Settings and resumes the install
+when they return.
 
 ## How it reaches users
 
