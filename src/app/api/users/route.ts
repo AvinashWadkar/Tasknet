@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
+import { ensureProcessExists } from '@/lib/processes'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 
@@ -89,7 +90,9 @@ export async function POST(req: NextRequest) {
     const employeeCode = String(body.employeeCode || '').trim()
     const name = String(body.name || '').trim()
     const email = String(body.email || '').trim().toLowerCase()
-    const process = String(body.process || '').trim()
+    // Canonicalise against the controlled Process list so a new name entered
+    // here (or via Excel bulk import) is registered for future IDs.
+    const process = await ensureProcessExists(body.process)
     const designation = String(body.designation || '').trim()
     const managerName = String(body.managerName || '').trim()
     const managerEmail = String(body.managerEmail || '').trim().toLowerCase()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -39,13 +39,14 @@ import { useToast } from '@/hooks/use-toast'
 import { api } from './api'
 import { BulkCreateDialog } from './bulk-create-dialog'
 import { SendNotificationDialog } from './send-notification-dialog'
+import { ProcessDuplicateDialog } from './process-duplicate-dialog'
 import type { DirectoryUser, Me } from './types'
 import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
   Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone, FilterX, Filter,
   BellRing, CheckCircle2, AlertTriangle, Globe, Smartphone,
-  Check, ChevronDown, X,
+  Check, ChevronDown, X, Plus, FileDown, Sparkles,
 } from 'lucide-react'
 
 type FilterState = Record<string, string[]>
@@ -286,6 +287,183 @@ function ColumnFilter({
   )
 }
 
+/** Combobox for the Process field: pick from the admin-controlled list, or type a
+ *  name that does not exist yet and add it on the spot. A new name is saved to
+ *  the Process list immediately, so the next ID created offers it too. */
+function ProcessSelect({
+  label,
+  value,
+  onChange,
+  processes,
+  onAdd,
+  adding,
+  id,
+  error,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  processes: string[]
+  onAdd: (name: string) => Promise<void>
+  adding: boolean
+  id?: string
+  error?: boolean
+}) {
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [custom, setCustom] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const typed = q.trim()
+  const keyword = typed.toLowerCase()
+  const matches = processes.filter((p) => p.toLowerCase().includes(keyword))
+  const exactExists = processes.some((p) => p.toLowerCase() === keyword)
+  const canAdd = typed.length > 0 && !exactExists
+
+  // "Custom / not in list" also matches when editing a user whose stored process
+  // predates the controlled list, so that value is never silently dropped.
+  const listKnown = processes.some((p) => p.toLowerCase() === value.trim().toLowerCase())
+  const options = listKnown || !value ? matches : [...matches, value].sort((a, b) => a.localeCompare(b))
+
+  async function addCustom() {
+    const name = typed
+    if (!name || saving) return
+    setSaving(true)
+    try {
+      await onAdd(name)
+      onChange(name)
+      setQ('')
+      setCustom('')
+      setOpen(false)
+      toast({
+        title: 'Process added',
+        description: `"${name}" is now available for every new ID.`,
+      })
+    } catch (err) {
+      toast({
+        title: 'Could not add process',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>
+        {label}
+        <span className="text-red-500"> *</span>
+      </Label>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          if (!next) {
+            setQ('')
+            setCustom('')
+          }
+        }}
+      >
+        <PopoverTrigger asChild>
+          <Button
+            id={id}
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            aria-invalid={error || undefined}
+            className={cn(
+              'h-10 w-full justify-between gap-1.5 bg-white px-3 font-normal data-[state=open]:border-brand-300 data-[state=open]:ring-2 data-[state=open]:ring-brand-100',
+              error ? 'border-red-300' : 'border-slate-200'
+            )}
+          >
+            <span className="min-w-0 truncate text-sm text-slate-700">{value || 'Select a process'}</span>
+            <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-0" align="start">
+          <div className="border-b border-slate-100 px-3 py-2">
+            <div className="relative">
+              <Search
+                className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+                aria-hidden="true"
+              />
+              <input
+                value={open && (q || custom) ? q || custom : q}
+                onChange={(e) => {
+                  setQ(e.target.value)
+                  setCustom(e.target.value)
+                }}
+                placeholder="Search or type a new process…"
+                aria-label="Search or type a new process"
+                className="h-8 w-full rounded-md border border-slate-200 bg-white pl-8 pr-2 text-sm outline-none placeholder:text-slate-400 focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-64 overflow-y-auto p-1.5" role="listbox" aria-label={label}>
+            {options.length === 0 && !canAdd ? (
+              <p className="px-2 py-6 text-center text-xs text-slate-400">
+                No process matches. Type a name to add it.
+              </p>
+            ) : (
+              options.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  role="option"
+                  aria-selected={p === value}
+                  onClick={() => {
+                    onChange(p)
+                    setQ('')
+                    setCustom('')
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-brand-50',
+                    p === value ? 'font-medium text-brand-700' : 'text-slate-700'
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{p}</span>
+                  {p === value && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />}
+                  {!listKnown && processes.some((x) => x.toLowerCase() === p.toLowerCase()) === false && (
+                    <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      not in list
+                    </span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+
+          {canAdd && (
+            <div className="border-t border-slate-100 p-1.5">
+              <button
+                type="button"
+                onClick={addCustom}
+                disabled={saving}
+                className="flex w-full items-center gap-2 rounded-md bg-brand-50 px-2 py-1.5 text-left text-sm font-medium text-brand-700 transition hover:bg-brand-100 disabled:opacity-60"
+              >
+                {saving || adding ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                )}
+                <span className="truncate">
+                  Add {typed.length > 28 ? `${typed.slice(0, 28)}…` : typed}
+                </span>
+              </button>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+}
+
 const EMPTY = {
   employeeCode: '',
   name: '',
@@ -457,6 +635,10 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  // Admin-controlled process list feeding the Process dropdown(s).
+  const [processes, setProcesses] = useState<string[]>([])
+  const [addingProcess, setAddingProcess] = useState(false)
+
   // Reset-password dialog state
   const [resetTarget, setResetTarget] = useState<DirectoryUser | null>(null)
   const [resetPw, setResetPw] = useState('Digitide@123')
@@ -481,6 +663,9 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushResult, setPushResult] = useState<PushCheckResult | null>(null)
 
+  // Duplicate-process review popup state
+  const [dupOpen, setDupOpen] = useState(false)
+
   async function loadUsers() {
     try {
       const r = await api<{ users: DirectoryUser[] }>('/api/users')
@@ -490,9 +675,62 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     }
   }
 
+  async function loadProcesses() {
+    try {
+      const r = await api<{ processes: { id: string; name: string }[] }>('/api/processes')
+      setProcesses(r.processes.map((p) => p.name))
+    } catch {
+      setProcesses([])
+    }
+  }
+
+  /** Saves a newly typed process so it is selectable for every later ID. */
+  async function addProcess(name: string) {
+    setAddingProcess(true)
+    try {
+      const r = await api<{ process: { id: string; name: string }; created: boolean }>('/api/processes', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      })
+      setProcesses((prev) =>
+        prev.some((p) => p.toLowerCase() === r.process.name.toLowerCase())
+          ? prev
+          : [...prev, r.process.name].sort((a, b) => a.localeCompare(b))
+      )
+    } finally {
+      setAddingProcess(false)
+    }
+  }
+
   useEffect(() => {
     loadUsers()
+    loadProcesses()
   }, [refreshKey])
+
+  // One automatic duplicate scan per browser session. The requirement is that
+  // the admin gets a popup unprompted when the names look scattered — but
+  // nagging on every tab focus would make people close it without reading.
+  // Server-side cache keeps repeat scans free; manual button always re-runs.
+  const autoChecked = useRef(false)
+  useEffect(() => {
+    if (autoChecked.current) return
+    autoChecked.current = true
+    if (typeof window !== 'undefined' && window.sessionStorage.getItem('dupScanAck')) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await api<{ groups: { id: string }[] }>('/api/processes/analyze', { method: 'POST' })
+        if (!cancelled && r.groups.length > 0) setDupOpen(true)
+      } catch {
+        /* analysis unavailable — the manual button still works */
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const distinct = (vals: string[]) => [...new Set(vals.filter((v): v is string => Boolean(v)))].sort((a, b) => a.localeCompare(b))
 
@@ -712,11 +950,12 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     }
   }
 
+  // 'process' is rendered as a combobox instead of a free-text input, so it is
+  // deliberately absent from these lists.
   const fields: { key: keyof typeof EMPTY; label: string; placeholder: string; type?: string; required?: boolean }[] = [
     { key: 'employeeCode', label: 'Employee Code', placeholder: 'e.g. EMP010', required: true },
     { key: 'name', label: 'Employee Name', placeholder: 'e.g. Avinash Sharma', required: true },
     { key: 'email', label: 'Email ID', placeholder: 'e.g. avinash@digitide.com', type: 'email', required: true },
-    { key: 'process', label: 'Process', placeholder: 'e.g. Customer Support', required: true },
     { key: 'designation', label: 'Designation', placeholder: 'e.g. Executive / TL / AM / DM', required: true },
   ]
 
@@ -724,7 +963,6 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     { key: 'employeeCode', label: 'Employee Code', required: true },
     { key: 'name', label: 'Employee Name', required: true },
     { key: 'email', label: 'Email ID', type: 'email', required: true },
-    { key: 'process', label: 'Process', required: true },
     { key: 'designation', label: 'Designation', required: true },
   ]
 
@@ -755,6 +993,9 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
           <p className="text-sm text-slate-500">Only you can create employee IDs. Pick one or more managers (all equal) — employees with no manager are top level.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:shrink-0">
+          <Button type="button" variant="outline" onClick={() => setDupOpen(true)} className="shrink-0">
+            <Sparkles className="mr-2 h-4 w-4" /> Check Process Names
+          </Button>
           <Button type="button" variant="outline" onClick={checkPush} disabled={pushBusy} className="shrink-0">
             {pushBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BellRing className="mr-2 h-4 w-4" />}
             Check Push Notification
@@ -835,6 +1076,16 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 </div>
               ))}
 
+              <ProcessSelect
+                id="f-process"
+                label="Process"
+                value={form.process}
+                onChange={(v) => set('process', v)}
+                processes={processes}
+                onAdd={addProcess}
+                adding={addingProcess}
+              />
+
               <ManagerPicker
                 label="Manager(s)"
                 people={users ?? []}
@@ -896,12 +1147,20 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 Every employee ID in the system. Passwords are visible to you (admin) only.
               </CardDescription>
             </div>
-            <div className="flex w-full items-center gap-2 sm:w-auto">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {activeFilterCount > 0 && (
                 <Button type="button" variant="outline" size="sm" className="shrink-0 text-xs" onClick={() => setFilters({})}>
                   <FilterX className="mr-1 h-3.5 w-3.5" /> Clear ({activeFilterCount})
                 </Button>
               )}
+              <a
+                href="/api/users/export"
+                download
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-100"
+                title="Download every user ever created as an Excel file"
+              >
+                <FileDown className="h-3.5 w-3.5" /> Download dump
+              </a>
               <div className="relative w-full sm:w-56">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
                 <Input placeholder="Search…" className="pl-8" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -1096,6 +1355,19 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       {/* Send a custom push / in-app notification */}
       <SendNotificationDialog open={sendOpen} onOpenChange={setSendOpen} users={users ?? []} />
 
+      {/* AI duplicate-process review: admin decides same vs different per group */}
+      <ProcessDuplicateDialog
+        open={dupOpen}
+        onOpenChange={(o) => {
+          setDupOpen(o)
+          if (!o && typeof window !== 'undefined') window.sessionStorage.setItem('dupScanAck', '1')
+        }}
+        onMerged={() => {
+          loadProcesses()
+          loadUsers()
+        }}
+      />
+
       {/* Reset password confirmation */}
       <AlertDialog open={resetTarget !== null} onOpenChange={(o) => { if (!o) setResetTarget(null) }}>
         <AlertDialogContent>
@@ -1180,6 +1452,16 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 </SelectContent>
               </Select>
             </div>
+
+            <ProcessSelect
+              id="e-process"
+              label="Process"
+              value={editForm.process}
+              onChange={(v) => setEdit('process', v)}
+              processes={processes}
+              onAdd={addProcess}
+              adding={addingProcess}
+            />
 
             <ManagerPicker
               label="Manager(s)"

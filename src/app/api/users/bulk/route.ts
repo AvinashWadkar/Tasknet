@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import * as XLSX from 'xlsx'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { ensureProcessExists, normalizeProcessName } from '@/lib/processes'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -187,6 +188,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Register every process name in the sheet with the controlled list first,
+    // so imports cannot create values that never show up in the admin dropdown.
+    for (const name of new Set(valid.map((v) => normalizeProcessName(v.process)).filter(Boolean))) {
+      await ensureProcessExists(name)
+    }
+
     // ── Create valid rows ──────────────────────────────────────────
     const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10) // same default for every row
     const createdEmailToId = new Map<string, string>()
@@ -201,7 +208,7 @@ export async function POST(req: NextRequest) {
             employeeCode: v.employeeCode,
             name: v.name,
             email: v.email,
-            process: v.process,
+            process: normalizeProcessName(v.process),
             designation: v.designation,
             managerName: v.managerName || null,
             managerEmail: v.managerEmail || null,

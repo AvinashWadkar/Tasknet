@@ -43,6 +43,22 @@ model User {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Process: the controlled list of process names an admin can assign.
+// Without this the "Process" field was free text, so the same process
+// ended up spelled several ways ("customer support", "Customer Support",
+// "CSR") and every grouped report/filter disagreed. Admin-owned list:
+// adding a name here makes it selectable for every later user.
+// User.process above stays a denormalized string snapshot of the chosen row.
+// ─────────────────────────────────────────────────────────────
+model Process {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([name])
+}
+
+// ─────────────────────────────────────────────────────────────
 // ManagerMapping: an employee can report to more than one manager.
 // Both edges are equal — each manager sees and tracks the employee.
 // User.managerId (above) is kept as the "primary" link for legacy
