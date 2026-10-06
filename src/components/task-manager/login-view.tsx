@@ -97,6 +97,15 @@ export function LoginView({ onLogin }: { onLogin: (me: Me) => void }) {
           First time logging in? Use the default password shared by your administrator —
           you&apos;ll be asked to set your own password.
         </p>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          For new ID creation reach out at{' '}
+          <a
+            href="mailto:avinash.wadkar@digitide.com"
+            className="font-medium text-slate-500 underline-offset-2 transition hover:text-brand-600 hover:underline"
+          >
+            avinash.wadkar@digitide.com
+          </a>
+        </p>
       </div>
     </div>
   )
