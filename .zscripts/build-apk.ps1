@@ -30,22 +30,61 @@ if ($LASTEXITCODE -ne 0) { throw 'icon generation failed' }
 node .zscripts\verify-icons.mjs
 if ($LASTEXITCODE -ne 0) { throw 'icon verification failed' }
 
+# webDir is public/, so a local public\download\ mirror would be bundled into the
+# APK's web assets. Remove it first, then restore it after the build.
+$stagedInstallers = @()
+if (Test-Path 'public\download') {
+  $stagedInstallers = @(Get-ChildItem 'public\download\*.apk' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+  Remove-Item 'public\download' -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Sync from the repo root: the Capacitor CLI resolves android\ relative to the
+# working directory and reports "platform has not been added" from inside it.
+npx cap sync android
+if ($LASTEXITCODE -ne 0) { throw 'cap sync failed' }
+
 Push-Location android
 try {
-  # Push local code changes into the native project, then build the signed APK.
-  npx cap sync android
-  if ($LASTEXITCODE -ne 0) { throw 'cap sync failed' }
   .\gradlew.bat assembleRelease --no-daemon
   if ($LASTEXITCODE -ne 0) { throw 'gradle build failed' }
 }
-finally { Pop-Location }
+finally {
+  Pop-Location
+  # Restore the local mirror whether or not the build succeeded, so a failure
+  # never leaves public\ in a different state than it was found in.
+  if ($stagedInstallers.Count -gt 0) {
+    New-Item -ItemType Directory -Path 'public\download' -Force | Out-Null
+    # Re-copy from android-app: the FileInfo captured above points at the path
+    # that was just deleted, so restore by name rather than by full path.
+    foreach ($name in $stagedInstallers) {
+      $source = Join-Path 'android-app' $name
+      if (Test-Path $source) { Copy-Item $source "public\download\$name" -Force }
+    }
+  }
+}
 
 $apk = 'android\app\build\outputs\apk\release\app-release.apk'
 
-# Publish into android-app/, the single place the released installer is tracked.
-# The Docker build copies it into public/download so the site's button can serve it.
+# Take the version from build.gradle so the published filename always matches
+# what the APK actually reports.
+$gradle = Get-Content 'android\app\build.gradle' -Raw
+$versionName = if ($gradle -match 'versionName\s+"([^"]+)"') { $Matches[1] } else { throw 'could not read versionName from build.gradle' }
+$published = "android-app\Tasknet-v$versionName.apk"
+
 if (-not (Test-Path 'android-app')) { New-Item -ItemType Directory -Path 'android-app' | Out-Null }
-Copy-Item $apk 'android-app\Tasknet-v1.0.apk' -Force
+
+# Older builds stay in android-app/ so any device on an earlier version can still
+# be updated or reinstalled; the site's download button serves the newest.
+Copy-Item $apk $published -Force
+
+# Mirror the published builds for local runs of `next dev` / `next start`.
+# capacitor.config.ts uses webDir: 'public', so anything here is also bundled
+# into the APK's web assets by `cap sync` - which would nest the installers
+# inside the app that offers them. Only mirror what is needed to test locally,
+# and clear it before syncing so no APK is ever shipped inside another APK.
+New-Item -ItemType Directory -Path 'public\download' -Force | Out-Null
+Get-ChildItem 'android-app\*.apk' | ForEach-Object { Copy-Item $_.FullName "public\download\$($_.Name)" -Force }
 
 Write-Host "`nAPK: $((Resolve-Path $apk).Path) ($([math]::Round((Get-Item $apk).Length / 1MB, 2)) MB)" -ForegroundColor Green
-Write-Host "Published: $((Resolve-Path 'android-app\Tasknet-v1.0.apk').Path)" -ForegroundColor Green
+Write-Host "Published: $((Resolve-Path $published).Path)  (v$versionName)" -ForegroundColor Green
+Write-Host "Kept: $((Get-ChildItem 'android-app\*.apk').Count) build(s) in android-app\" -ForegroundColor Green

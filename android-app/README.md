@@ -5,7 +5,11 @@ assets in `public/`.
 
 | File | Purpose |
 | --- | --- |
-| `Tasknet-v1.0.apk` | Current release. Signed with the release key; install it directly on a phone. |
+| `Tasknet-v1.1.apk` | Current release. Signed; install it directly on a phone. |
+| `Tasknet-v1.0.apk` | Previous release, kept so devices already on v1.0 can be updated. |
+
+Every build is kept here under `Tasknet-v<version>.apk`. Nothing is overwritten or
+deleted, so any version can be downloaded and installed directly.
 
 ## Building a new release
 
@@ -30,6 +34,18 @@ Copy-Item android-app\Tasknet-v1.0.apk public\download\
 
 `NEXT_PUBLIC_APK_URL` overrides the URL, so you can point the button at a GitHub
 release or a CDN instead.
+
+## Bumping the version
+
+1. Edit `android/app/build.gradle`: raise `versionCode` (required, and must keep
+   increasing for Android to accept an upgrade) and `versionName`.
+2. Update `APP_VERSION` in `src/lib/native.ts` so the download button points at
+   the new file.
+3. Run `.\.zscripts\build-apk.ps1`. The script reads the version out of
+   `build.gradle` and publishes to `android-app/Tasknet-v<version>.apk`.
+
+The site's button serves the current version only. Older files stay in this
+folder but are not linked from the site; share their path directly to reach them.
 
 ## Notes
 

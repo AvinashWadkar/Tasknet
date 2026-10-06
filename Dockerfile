@@ -20,16 +20,19 @@ COPY prisma ./prisma
 ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder"
 RUN bunx prisma generate
 
-# Build the app (output: standalone).
 COPY . .
 ENV NEXT_PUBLIC_APP_URL=""
-RUN bun run build
 
-# The released installer lives in android-app/ rather than public/, so the site
-# can version it separately from the web assets. Next only serves what is inside
-# public/, so publish it there for the download button to reach it.
+# The released installers live in android-app/ rather than in public/, so versions
+# stay side by side. Next only serves what is inside public/, and it registers
+# those routes during the build, so publish them BEFORE building - a file copied
+# in afterwards is served as a 404.
 RUN mkdir -p public/download && \
-    cp -f android-app/*.apk public/download/ 2>/dev/null || true
+    cp -f android-app/*.apk public/download/ && \
+    ls -1 public/download/
+
+# Build the app (output: standalone).
+RUN bun run build
 
 # Assemble the standalone server dir (mirrors the package.json build script).
 RUN cp -r .next/static .next/standalone/.next/ && \
