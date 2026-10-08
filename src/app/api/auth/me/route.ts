@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isManager } from '@/lib/hierarchy'
+import { publish } from '@/lib/realtime'
 
 export async function GET() {
   const user = await getSessionUser()
@@ -30,6 +31,7 @@ export async function PATCH(req: Request) {
     data: { teamScope },
   })
 
+  publish({ type: 'users', userId: session.id })
   return NextResponse.json({
     user: {
       id: updated.id,

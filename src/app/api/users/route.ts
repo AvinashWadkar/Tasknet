@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
 import { ensureProcessExists } from '@/lib/processes'
+import { publish } from '@/lib/realtime'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 
@@ -175,6 +176,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    publish({ type: 'users', userId: user.id })
     return NextResponse.json({
       user: { id: user.id, employeeCode: user.employeeCode, name: user.name, email: user.email },
       managerLinked: managerIds.length > 0,

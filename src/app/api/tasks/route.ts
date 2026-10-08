@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { istDayBounds, istDueDate, fmtDate } from '@/lib/dates'
 import { notifyAssignees } from '@/lib/notify'
+import { publish } from '@/lib/realtime'
 import { recurrenceLabel, parseWeekdays, weekdaysToStr, type RecurFreq, type RecurEndType } from '@/lib/recurring'
 
 const taskInclude = {
@@ -232,6 +233,8 @@ export async function POST(req: NextRequest) {
       title: 'New task assigned to you',
       message: `${session.name} assigned you "${task.title}" — due ${fmtDate(task.dueDate)}${recurring ? ' (recurring)' : ''}.`,
     })
+
+    publish({ type: 'task', taskId: task.id, action: 'created' })
 
     return NextResponse.json({ task })
   } catch (e) {

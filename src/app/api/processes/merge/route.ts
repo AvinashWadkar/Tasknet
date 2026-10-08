@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { normalizeProcessName } from '@/lib/processes'
+import { publish } from '@/lib/realtime'
 
 /**
  * POST /api/processes/merge — ADMIN only: act on an admin's decision in the
@@ -87,6 +88,8 @@ export async function POST(req: NextRequest) {
     select: { name: true },
   })
 
+  publish({ type: 'processes' })
+  publish({ type: 'users' })
   return NextResponse.json({
     canonical,
     updatedUsers: userResult.count,

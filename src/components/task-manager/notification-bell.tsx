@@ -13,6 +13,8 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 import { api } from './api'
+import { useRealtime } from '@/hooks/use-realtime'
+import type { RealtimeEvent } from '@/lib/realtime'
 import { isNativeApp } from '@/lib/native'
 import { subscribeForNativePush, subscribeForPush } from './push-client'
 import { cn } from '@/lib/utils'
@@ -105,6 +107,15 @@ export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId:
       clearInterval(t)
     }
   }, [load])
+
+  useRealtime(
+    useCallback(
+      (event: RealtimeEvent) => {
+        if (event.type === 'notification') void load(true)
+      },
+      [load]
+    )
+  )
 
   // Register the service worker + web-push subscription once permission is granted,
   // and re-subscribe whenever the permission status changes to "granted".

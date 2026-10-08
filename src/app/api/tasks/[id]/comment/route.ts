@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { publish } from '@/lib/realtime'
 
 /**
  * POST /api/tasks/[id]/comment — participants (creator or assignees) add a comment
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       },
     })
 
+    publish({ type: 'task', taskId: task.id, action: 'comment' })
     return NextResponse.json({ ok: true, activity })
   } catch (e) {
     console.error('comment error', e)

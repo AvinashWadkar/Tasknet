@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { getSessionUser, validatePassword } from '@/lib/auth'
+import { publish } from '@/lib/realtime'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     })
 
+    publish({ type: 'users', userId: id })
     return NextResponse.json({ ok: true, password: newPassword, forcedChange: true })
   } catch (e) {
     console.error('reset-password error', e)

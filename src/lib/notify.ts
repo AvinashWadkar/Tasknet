@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { publish } from '@/lib/realtime'
 import { sendPushToUsers } from '@/lib/webpush'
 
 /**
@@ -29,6 +30,10 @@ export async function notifyAssignees(input: {
       message: input.message.slice(0, 400),
     })),
   })
+
+  for (const userId of recipients) {
+    publish({ type: 'notification', userId })
+  }
 
   // Best-effort native OS push — never blocks the caller
   await sendPushToUsers(recipients, {

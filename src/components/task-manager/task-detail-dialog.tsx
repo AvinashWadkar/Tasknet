@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { useRealtime } from '@/hooks/use-realtime'
+import type { RealtimeEvent } from '@/lib/realtime'
 import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar } from './shared'
 import { api } from './api'
 import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
@@ -90,6 +92,19 @@ export function TaskDetailDialog({
   const [handoffBusy, setHandoffBusy] = useState(false)
   const { toast } = useToast()
 
+  const loadAddUsers = useCallback(async (current: TaskDetailDTO) => {
+    try {
+      const r = await api<{ users: { id: string; name: string; employeeCode: string }[] }>('/api/users')
+      setAddUsers(
+        r.users
+          .filter((u) => !current.assignments.some((a) => a.userId === u.id))
+          .map((u) => ({ id: u.id, name: `${u.name} (${u.employeeCode})` }))
+      )
+    } catch {
+      // ignore
+    }
+  }, [])
+
   const load = useCallback(async () => {
     if (!taskId) return
     setError(null)
@@ -98,25 +113,36 @@ export function TaskDetailDialog({
       const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
-      if (res.canEdit) {
-        api<{ users: { id: string; name: string; employeeCode: string }[] }>('/api/users')
-          .then((r) => {
-            setAddUsers(
-              r.users
-                .filter((u) => !res.task.assignments.some((a) => a.userId === u.id))
-                .map((u) => ({ id: u.id, name: `${u.name} (${u.employeeCode})` }))
-            )
-          })
-          .catch(() => {})
-      }
+      if (res.canEdit) void loadAddUsers(res.task)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load task')
     }
-  }, [taskId])
+  }, [taskId, loadAddUsers])
 
   useEffect(() => {
     if (taskId) load()
   }, [taskId, load])
+
+  const refresh = useCallback(async () => {
+    if (!taskId) return
+    try {
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean }>(`/api/tasks/${taskId}`)
+      setTask(res.task)
+      setCanAct(res.canAct)
+      if (res.canEdit) void loadAddUsers(res.task)
+    } catch {
+      // keep showing the last known state
+    }
+  }, [taskId, loadAddUsers])
+
+  useRealtime(
+    useCallback(
+      (event: RealtimeEvent) => {
+        if (event.type === 'task' && event.taskId === taskId) void refresh()
+      },
+      [taskId, refresh]
+    )
+  )
 
   async function setStatus(status: TaskStatus) {
     if (!task) return

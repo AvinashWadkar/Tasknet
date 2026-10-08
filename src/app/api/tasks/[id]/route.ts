@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { getDescendantIds } from '@/lib/hierarchy'
-import { istDueDate } from '@/lib/dates'
+import { istDueDate, fmtDate } from '@/lib/dates'
+import { notifyAssignees } from '@/lib/notify'
 import { taskInclude } from '@/lib/task-include'
+import { publish } from '@/lib/realtime'
 
 /**
  * GET /api/tasks/[id] — full detail incl. all assignees' statuses + complete history.
@@ -82,6 +84,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
     }
 
+    const addedIds: string[] = []
     if (Array.isArray(body.addAssigneeIds) && body.addAssigneeIds.length > 0) {
       const existing = new Set(task.assignments.map((a) => a.userId))
       const toAdd = [...new Set(body.addAssigneeIds as string[])].filter((uid) => !existing.has(uid))
@@ -91,6 +94,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
           await db.taskAssignment.create({ data: { taskId: task.id, userId: u.id } })
         }
         if (users.length) {
+          addedIds.push(...users.map((u) => u.id))
           logs.push({
             actorId: session.id,
             actorName: actor,
@@ -107,6 +111,18 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     const updated = await db.task.findUnique({ where: { id: task.id }, include: taskInclude })
+
+    if (addedIds.length && updated) {
+      await notifyAssignees({
+        taskId: task.id,
+        recipientIds: addedIds,
+        excludeIds: [session.id],
+        title: 'You were added to a task',
+        message: `${session.name} added you to "${updated.title}" - due ${fmtDate(updated.dueDate)}.`,
+      })
+    }
+
+    if (logs.length) publish({ type: 'task', taskId: task.id, action: 'updated' })
     return NextResponse.json({ task: updated })
   } catch (e) {
     console.error('update task error', e)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
+import { publish } from '@/lib/realtime'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -143,6 +144,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     })
   }
 
+  publish({ type: 'users', userId: id })
   return NextResponse.json({
     user: {
       id: updated.id,
@@ -191,5 +193,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     where: { OR: [{ employeeId: id }, { managerId: id }] },
   })
 
+  publish({ type: 'users', userId: id })
   return NextResponse.json({ ok: true })
 }

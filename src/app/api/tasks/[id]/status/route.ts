@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { maybeSpawnNextOccurrence } from '@/lib/recurring-server'
 import { taskInclude } from '@/lib/task-include'
+import { publish } from '@/lib/realtime'
 
 const VALID = ['PENDING', 'IN_PROGRESS', 'COMPLETED']
 
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       where: { id: task.id },
       include: taskInclude,
     })
+    publish({ type: 'task', taskId: task.id, action: 'status' })
     return NextResponse.json({ ok: true, task: updated })
   } catch (e) {
     console.error('status update error', e)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { sendPushToUsers } from '@/lib/webpush'
+import { publish } from '@/lib/realtime'
 
 /**
  * POST /api/admin/notifications — admin sends a custom push/in-app notification.
@@ -55,6 +56,10 @@ export async function POST(req: NextRequest) {
       message: message.slice(0, 400),
     })),
   })
+
+  for (const userId of recipients) {
+    publish({ type: 'notification', userId })
+  }
 
   // Native OS push to the targeted users' browsers
   const dispatch = await sendPushToUsers(recipients, {

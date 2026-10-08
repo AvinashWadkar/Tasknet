@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { ensureProcessExists, normalizeProcessName } from '@/lib/processes'
+import { publish } from '@/lib/realtime'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -267,6 +268,7 @@ export async function POST(req: NextRequest) {
     const createdCount = results.filter((r) => r.status === 'created').length
     const failedCount = results.filter((r) => r.status === 'failed').length
 
+    publish({ type: 'users' })
     return NextResponse.json({ totalRows: dataRows, createdCount, failedCount, results })
   } catch (e) {
     console.error('bulk create users error', e)

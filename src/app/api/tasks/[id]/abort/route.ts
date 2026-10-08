@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { taskInclude } from '@/lib/task-include'
+import { publish } from '@/lib/realtime'
 
 /**
  * POST /api/tasks/[id]/abort — the task creator aborts (cancels) their task.
@@ -47,6 +48,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       where: { id: task.id },
       include: taskInclude,
     })
+    publish({ type: 'task', taskId: task.id, action: 'aborted' })
     return NextResponse.json({ ok: true, task: updated })
   } catch (e) {
     console.error('abort task error', e)

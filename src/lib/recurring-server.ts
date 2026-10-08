@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { nextDueDate, seriesContinues, parseWeekdays, type RecurFreq } from './recurring'
 import { fmtDate, fmtTime } from './dates'
 import { notifyAssignees } from './notify'
+import { publish } from './realtime'
 
 /**
  * Recurring-series spawner (server-only).
@@ -111,6 +112,8 @@ export async function maybeSpawnNextOccurrence(taskId: string): Promise<string |
     title: 'New occurrence of a recurring task',
     message: `${task.title} — occurrence #${nextOccurrence} is due ${dueLabel}.`,
   })
+
+  publish({ type: 'task', taskId: created.id, action: 'created' })
 
   return created.id
 }

@@ -4,6 +4,7 @@ import { getSessionUser } from '@/lib/auth'
 import { fmtDate } from '@/lib/dates'
 import { taskInclude } from '@/lib/task-include'
 import { sendPushToUsers } from '@/lib/webpush'
+import { publish } from '@/lib/realtime'
 
 /**
  * POST /api/tasks/[id]/handoff — an assignee hands off THEIR part of a task to
@@ -111,5 +112,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     taskId: task.id,
     tag: `handoff-${task.id}`,
   })
+  publish({ type: 'task', taskId: task.id, action: 'handoff' })
+  publish({ type: 'notification', userId: toUserId })
   return NextResponse.json({ ok: true, task: updated, handedTo: { id: target.id, name: target.name } })
 }

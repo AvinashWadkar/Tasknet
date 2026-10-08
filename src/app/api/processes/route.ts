@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { normalizeProcessName } from '@/lib/processes'
+import { publish } from '@/lib/realtime'
 
 /** GET /api/processes — the admin-controlled list, for the Process dropdown. */
 export async function GET() {
@@ -43,5 +44,6 @@ export async function POST(req: NextRequest) {
   if (dupe) return NextResponse.json({ process: dupe, created: false })
 
   const created = await db.process.create({ data: { name }, select: { id: true, name: true } })
+  publish({ type: 'processes' })
   return NextResponse.json({ process: created, created: true })
 }

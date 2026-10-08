@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -23,6 +23,8 @@ import { NotificationBell } from './notification-bell'
 import { AppDownloadButton } from './app-download-button'
 import { NotificationGate } from './notification-gate'
 import { unsubscribeForNativePush } from './push-client'
+import { useRealtime } from '@/hooks/use-realtime'
+import type { RealtimeEvent } from '@/lib/realtime'
 import { NewTaskDialog } from './new-task-dialog'
 import { TaskDetailDialog } from './task-detail-dialog'
 import { InitialAvatar } from './shared'
@@ -105,6 +107,35 @@ export function TaskManagerApp() {
   }, [me])
 
   const bumpRefresh = useCallback(() => setRefreshKey((k) => k + 1), [])
+
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    }
+  }, [])
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current) return
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null
+      setRefreshKey((k) => k + 1)
+    }, 300)
+  }, [])
+
+  useRealtime(
+    useCallback(
+      (event: RealtimeEvent) => {
+        if (event.type === 'notification') return
+        if (event.type === 'users' && event.userId && event.userId === me?.id) {
+          void loadMe()
+        }
+        scheduleRefresh()
+      },
+      [me?.id, loadMe, scheduleRefresh]
+    ),
+    Boolean(me)
+  )
 
   // Global "team scope" setting (persisted on the server per user). Changing it
   // from any page updates `me` everywhere and re-fetches all team-scoped views.
