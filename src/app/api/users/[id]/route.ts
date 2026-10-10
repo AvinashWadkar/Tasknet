@@ -98,9 +98,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 /**
- * DELETE /api/users/[id] — ADMIN only. Soft-deletes a user (isActive = false):
- * they can no longer log in and disappear from directory features, while task
- * history stays intact. The admin cannot delete their own account.
+ * DELETE /api/users/[id] — ADMIN only. Permanently removes an employee from the
+ * database (not the same as disabling their login, which is PATCH { isActive }
+ * and keeps the record). Before the row is erased we clear every reference that
+ * would otherwise block or dangle: reports that pointed at them lose their
+ * manager, the tasks they created are deleted (which cascades their assignments,
+ * comments and notifications), their activity on other tasks keeps its history
+ * with a null actor, and manager mappings are dropped. Assignments,
+ * notifications, push subscriptions and devices cascade at the DB level. The
+ * admin cannot delete their own account.
  */
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
@@ -115,21 +121,19 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
 
   const user = await db.user.findUnique({ where: { id } })
-  if (!user || !user.isActive) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  await db.user.update({
-    where: { id },
-    data: {
-      isActive: false,
-      managerId: null,
-      managerEmail: null,
-      managerName: null,
-    },
-  })
-  await db.managerMapping.deleteMany({
-    where: { OR: [{ employeeId: id }, { managerId: id }] },
-  })
+  await db.$transaction([
+    db.user.updateMany({
+      where: { managerId: id },
+      data: { managerId: null, managerName: null, managerEmail: null },
+    }),
+    db.task.deleteMany({ where: { createdById: id } }),
+    db.taskActivity.updateMany({ where: { actorId: id }, data: { actorId: null } }),
+    db.managerMapping.deleteMany({ where: { OR: [{ employeeId: id }, { managerId: id }] } }),
+    db.user.delete({ where: { id } }),
+  ])
 
   publish({ type: 'users', userId: id })
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, removed: user.employeeCode })
 }

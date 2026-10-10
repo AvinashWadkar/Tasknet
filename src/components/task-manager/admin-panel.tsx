@@ -46,7 +46,7 @@ import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
   Eye, EyeOff, Copy, FileUp, Pencil, UserX, UserCheck, Megaphone, FilterX, Filter,
   BellRing, CheckCircle2, AlertTriangle, Globe, Smartphone,
-  Check, ChevronDown, X, Plus, FileDown, Sparkles, ArrowRight,
+  Check, ChevronDown, X, Plus, FileDown, Sparkles, ArrowRight, Trash2,
 } from 'lucide-react'
 
 type FilterState = Record<string, string[]>
@@ -569,7 +569,7 @@ function PasswordCell({ password }: { password?: string | null }) {
   )
 }
 
-/** Edit / Enable-Login / Disable-Login / Reset-Password row actions shared by the table (md+) and mobile cards. */
+/** Edit / Enable-Login / Disable-Login / Reset-Password / Delete row actions shared by the table (md+) and mobile cards. */
 function RowActions({
   user,
   me,
@@ -577,6 +577,7 @@ function RowActions({
   onDisable,
   onEnable,
   onReset,
+  onDelete,
 }: {
   user: DirectoryUser
   me: Me
@@ -584,6 +585,7 @@ function RowActions({
   onDisable: (u: DirectoryUser) => void
   onEnable: (u: DirectoryUser) => void
   onReset: (u: DirectoryUser) => void
+  onDelete: (u: DirectoryUser) => void
 }) {
   const active = user.isActive !== false
   return (
@@ -638,6 +640,19 @@ function RowActions({
           <KeyRound className="h-3.5 w-3.5" />
         </Button>
       )}
+      {user.id !== me.id && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-slate-400 hover:bg-red-50 hover:text-red-600"
+          aria-label={`Delete ${user.name}`}
+          title="Delete permanently"
+          onClick={() => onDelete(user)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      )}
     </>
   )
 }
@@ -671,6 +686,8 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   // Disable-login confirmation + new/updated-ID result popups
   const [disableTarget, setDisableTarget] = useState<DirectoryUser | null>(null)
   const [disableBusy, setDisableBusy] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<DirectoryUser | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [changesInfo, setChangesInfo] = useState<{ name: string; employeeCode: string; changes: DetailChange[] } | null>(null)
   const [showDisabled, setShowDisabled] = useState(false)
 
@@ -987,6 +1004,32 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     }
   }
 
+  function askDelete(u: DirectoryUser) {
+    setDeleteTarget(u)
+  }
+
+  async function doDelete() {
+    if (!deleteTarget) return
+    setDeleteBusy(true)
+    try {
+      await api(`/api/users/${deleteTarget.id}`, { method: 'DELETE' })
+      toast({
+        title: 'Employee deleted',
+        description: `${deleteTarget.name} (${deleteTarget.employeeCode}) was permanently removed from the database.`,
+      })
+      setDeleteTarget(null)
+      await loadUsers()
+    } catch (err) {
+      toast({
+        title: 'Could not delete employee',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   async function enableLogin(u: DirectoryUser) {
     try {
       await api(`/api/users/${u.id}`, {
@@ -1269,7 +1312,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                           <p className="break-all text-xs text-slate-500">{u.employeeCode} · {u.email}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
-                          <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} />
+                          <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} onDelete={askDelete} />
                         </div>
                       </div>
 
@@ -1415,7 +1458,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                           </td>
                           <td className="hidden px-3 py-2.5 text-right md:table-cell">
                             <div className="flex items-center justify-end gap-0.5">
-                              <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} />
+                              <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} onDelete={askDelete} />
                             </div>
                           </td>
                         </tr>
@@ -1611,6 +1654,42 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
             >
               {disableBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Disable Login
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Permanent-delete confirmation */}
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-red-600" />
+              Delete {deleteTarget?.name} permanently?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  <strong>{deleteTarget?.employeeCode}</strong> will be removed from the database for good. This cannot
+                  be undone — their manager mappings, task assignments, notifications and devices are erased, any
+                  reports pointing to them lose their manager, and <strong>deleting them also deletes every task they
+                  created</strong> along with the comments and assignments on those tasks.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteBusy}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault()
+                doDelete()
+              }}
+            >
+              {deleteBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete Permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
