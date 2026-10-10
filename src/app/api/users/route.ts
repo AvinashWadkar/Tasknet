@@ -14,10 +14,10 @@ export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  const includeInactive =
-    session.role === 'ADMIN' && new URL(req.url).searchParams.get('includeInactive') === '1'
+  const isAdmin = session.role === 'ADMIN'
+  const includeInactive = isAdmin && new URL(req.url).searchParams.get('includeInactive') === '1'
 
-  const [users, mappings] = await Promise.all([
+  const [users, mappings, appDevices] = await Promise.all([
     db.user.findMany({
       where: includeInactive ? {} : { isActive: true },
       orderBy: { name: 'asc' },
@@ -46,6 +46,10 @@ export async function GET(req: NextRequest) {
         manager: { select: { id: true, name: true, email: true, employeeCode: true } },
       },
     }),
+    // Which users have an Android app signed in on a live device (for the admin indicator).
+    isAdmin
+      ? db.pushDevice.findMany({ where: { active: true }, select: { userId: true }, distinct: ['userId'] })
+      : Promise.resolve([] as { userId: string }[]),
   ])
 
   if (session.role !== 'ADMIN') {
@@ -74,6 +78,8 @@ export async function GET(req: NextRequest) {
     managersByEmployee.set(m.employeeId, arr)
   }
 
+  const appUserIds = new Set(appDevices.map((d) => d.userId))
+
   // Admin sees every user's current password (plaintext mirror)
   return NextResponse.json({
     users: users.map((u) => ({
@@ -81,6 +87,7 @@ export async function GET(req: NextRequest) {
       managers: managersByEmployee.get(u.id) || [],
       password: u.passwordPlain ?? null,
       passwordPlain: undefined,
+      hasApp: appUserIds.has(u.id),
     })),
   })
 }

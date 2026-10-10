@@ -89,6 +89,7 @@ export interface DirectoryUser {
   isActive?: boolean // false = login disabled by the admin
   isFirstLogin?: boolean
   createdAt?: string
+  hasApp?: boolean // true = signed in on an Android device (live FCM token)
   password?: string | null // ADMIN-only: current password (plaintext mirror)
 }
 
