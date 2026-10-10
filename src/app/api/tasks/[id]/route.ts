@@ -21,8 +21,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
   const isParticipant = task.createdById === session.id || task.assignments.some((a) => a.userId === session.id)
-  let canEdit = task.createdById === session.id
+  const isCreator = task.createdById === session.id
+  let canEdit = isCreator
   let canAct = isParticipant
+  let isManager = false
 
   if (!isParticipant) {
     const downline = await getDescendantIds(session.id)
@@ -31,12 +33,15 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     if (!teamVisible) {
       return NextResponse.json({ error: 'You do not have access to this task' }, { status: 403 })
     }
-    // Manager viewing a downline task: read-only
+    // Manager viewing a downline task: read-only, but may reopen parts
+    isManager = true
     canEdit = false
     canAct = false
   }
 
-  return NextResponse.json({ task, canEdit, canAct })
+  const canReopen = task.status !== 'ABORTED' && (isCreator || isManager)
+
+  return NextResponse.json({ task, canEdit, canAct, canReopen })
 }
 
 /**

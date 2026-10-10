@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +76,7 @@ export function TaskDetailDialog({
 }) {
   const [task, setTask] = useState<TaskDetailDTO | null>(null)
   const [canAct, setCanAct] = useState(false)
+  const [canReopen, setCanReopen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [statusBusy, setStatusBusy] = useState(false)
   const [comment, setComment] = useState('')
@@ -90,6 +92,10 @@ export function TaskDetailDialog({
   const [handoffSel, setHandoffSel] = useState<string | null>(null)
   const [handoffNote, setHandoffNote] = useState('')
   const [handoffBusy, setHandoffBusy] = useState(false)
+  const [reopenOpen, setReopenOpen] = useState(false)
+  const [reopenComment, setReopenComment] = useState('')
+  const [reopenSel, setReopenSel] = useState<string[]>([])
+  const [reopenBusy, setReopenBusy] = useState(false)
   const { toast } = useToast()
 
   const loadAddUsers = useCallback(async (current: TaskDetailDTO) => {
@@ -110,9 +116,10 @@ export function TaskDetailDialog({
     setError(null)
     setTask(null)
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
+      setCanReopen(res.canReopen)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load task')
@@ -126,12 +133,13 @@ export function TaskDetailDialog({
   const refresh = useCallback(async () => {
     if (!taskId) return
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
+      setCanReopen(res.canReopen)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch {
-      // keep showing the last known state
+      // ignore
     }
   }, [taskId, loadAddUsers])
 
@@ -257,6 +265,41 @@ export function TaskDetailDialog({
       setHandoffBusy(false)
     }
   }
+
+  function openReopen() {
+    setReopenComment('')
+    setReopenSel((task?.assignments.filter((a) => a.status === 'COMPLETED').map((a) => a.userId)) || [])
+    setReopenOpen(true)
+  }
+
+  function toggleReopen(userId: string) {
+    setReopenSel((prev) => (prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]))
+  }
+
+  async function doReopen() {
+    if (!task || reopenSel.length === 0) return
+    setReopenBusy(true)
+    try {
+      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}/reopen`, {
+        method: 'POST',
+        body: JSON.stringify({ userIds: reopenSel, comment: reopenComment.trim() || undefined }),
+      })
+      setTask(res.task)
+      setReopenOpen(false)
+      setReopenComment('')
+      onChanged()
+      toast({ title: 'Task reopened', description: 'The selected employees are back to Pending.' })
+    } catch (err) {
+      toast({
+        title: 'Could not reopen',
+        description: err instanceof Error ? err.message : 'Please try again.',
+      })
+    } finally {
+      setReopenBusy(false)
+    }
+  }
+
+  const completedAssignments = task?.assignments.filter((a) => a.status === 'COMPLETED') ?? []
 
   const myAssignment = task?.assignments.find((a) => a.userId === me.id)
   const isOverdue =
@@ -522,6 +565,17 @@ export function TaskDetailDialog({
                 {task.assignments.filter((a) => a.status === 'COMPLETED').length} of {task.assignments.length} employees completed
               </span>
               <div className="flex items-center gap-2">
+                {canReopen && !isAborted && completedAssignments.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                    onClick={openReopen}
+                  >
+                    <Rewind className="mr-1.5 h-3.5 w-3.5" />
+                    Reopen
+                  </Button>
+                )}
                 {isCreator && !isAborted && (
                   <Button
                     variant="outline"
@@ -580,6 +634,79 @@ export function TaskDetailDialog({
                   <Ban className="mr-1.5 h-4 w-4" />
                 )}
                 {abortBusy ? 'Aborting…' : 'Abort Task'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Reopen confirmation (creator or manager of the assignees) */}
+      {task && (
+        <AlertDialog open={reopenOpen} onOpenChange={setReopenOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reopen this task?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Reopened employees move back to Pending and are notified. This is recorded in the task history.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {completedAssignments.length > 1 ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-700">Choose who to reopen</p>
+                <div className="space-y-1.5">
+                  {completedAssignments.map((a) => (
+                    <label
+                      key={a.id}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-slate-200 bg-white p-2"
+                    >
+                      <Checkbox
+                        checked={reopenSel.includes(a.userId)}
+                        onCheckedChange={() => toggleReopen(a.userId)}
+                      />
+                      <InitialAvatar name={a.user.name} className="h-7 w-7 text-[10px]" />
+                      <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+                        {a.user.name} <span className="text-slate-400">· {a.user.employeeCode}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600">
+                <span className="font-medium text-slate-800">{completedAssignments[0]?.user.name}</span> will
+                move back to Pending.
+              </p>
+            )}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="reopen-comment">Comment (optional)</Label>
+              <Textarea
+                id="reopen-comment"
+                placeholder="e.g. Please redo with the updated format"
+                value={reopenComment}
+                onChange={(e) => setReopenComment(e.target.value)}
+                rows={3}
+                maxLength={1000}
+              />
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={reopenBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-amber-600 text-white hover:bg-amber-700"
+                disabled={reopenBusy || reopenSel.length === 0}
+                onClick={(e) => {
+                  e.preventDefault()
+                  doReopen()
+                }}
+              >
+                {reopenBusy ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Rewind className="mr-1.5 h-4 w-4" />
+                )}
+                {reopenBusy ? 'Reopening…' : 'Reopen'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
