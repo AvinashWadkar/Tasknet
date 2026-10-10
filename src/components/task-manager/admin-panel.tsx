@@ -44,12 +44,13 @@ import type { DirectoryUser, Me } from './types'
 import { fmtDate } from '@/lib/dates'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
-  Eye, EyeOff, Copy, FileUp, Pencil, Trash2, Megaphone, FilterX, Filter,
+  Eye, EyeOff, Copy, FileUp, Pencil, UserX, UserCheck, Megaphone, FilterX, Filter,
   BellRing, CheckCircle2, AlertTriangle, Globe, Smartphone,
-  Check, ChevronDown, X, Plus, FileDown, Sparkles,
+  Check, ChevronDown, X, Plus, FileDown, Sparkles, ArrowRight,
 } from 'lucide-react'
 
 type FilterState = Record<string, string[]>
+type DetailChange = { field: string; from: string; to: string }
 
 /** Searchable multi-select for assigning an employee's managers (all equal). */
 function ManagerPicker({
@@ -568,20 +569,23 @@ function PasswordCell({ password }: { password?: string | null }) {
   )
 }
 
-/** Edit / Delete / Reset-Password row actions shared by the table (md+) and mobile cards. */
+/** Edit / Enable-Login / Disable-Login / Reset-Password row actions shared by the table (md+) and mobile cards. */
 function RowActions({
   user,
   me,
   onEdit,
-  onDelete,
+  onDisable,
+  onEnable,
   onReset,
 }: {
   user: DirectoryUser
   me: Me
   onEdit: (u: DirectoryUser) => void
-  onDelete: (u: DirectoryUser) => void
+  onDisable: (u: DirectoryUser) => void
+  onEnable: (u: DirectoryUser) => void
   onReset: (u: DirectoryUser) => void
 }) {
+  const active = user.isActive !== false
   return (
     <>
       <Button
@@ -595,20 +599,33 @@ function RowActions({
       >
         <Pencil className="h-3.5 w-3.5" />
       </Button>
-      {user.id !== me.id && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-slate-400 hover:bg-red-50 hover:text-red-600"
-          aria-label={`Delete ${user.name}`}
-          title="Delete user"
-          onClick={() => onDelete(user)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      )}
-      {user.role !== 'ADMIN' && (
+      {user.id !== me.id &&
+        (active ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-slate-400 hover:bg-red-50 hover:text-red-600"
+            aria-label={`Disable login for ${user.name}`}
+            title="Disable login"
+            onClick={() => onDisable(user)}
+          >
+            <UserX className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"
+            aria-label={`Enable login for ${user.name}`}
+            title="Enable login"
+            onClick={() => onEnable(user)}
+          >
+            <UserCheck className="h-3.5 w-3.5" />
+          </Button>
+        ))}
+      {active && user.role !== 'ADMIN' && (
         <Button
           type="button"
           variant="ghost"
@@ -651,9 +668,11 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const [editError, setEditError] = useState<string | null>(null)
   const [editBusy, setEditBusy] = useState(false)
 
-  // Delete-user dialog state
-  const [deleteTarget, setDeleteTarget] = useState<DirectoryUser | null>(null)
-  const [deleteBusy, setDeleteBusy] = useState(false)
+  // Disable-login confirmation + new/updated-ID result popups
+  const [disableTarget, setDisableTarget] = useState<DirectoryUser | null>(null)
+  const [disableBusy, setDisableBusy] = useState(false)
+  const [changesInfo, setChangesInfo] = useState<{ name: string; employeeCode: string; changes: DetailChange[] } | null>(null)
+  const [showDisabled, setShowDisabled] = useState(false)
 
   // Bulk-create-via-Excel dialog state
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -668,7 +687,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
   async function loadUsers() {
     try {
-      const r = await api<{ users: DirectoryUser[] }>('/api/users')
+      const r = await api<{ users: DirectoryUser[] }>('/api/users?includeInactive=1')
       setUsers(r.users)
     } catch {
       setUsers([])
@@ -764,6 +783,9 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     return { code: emp, password, pd: procDesig, mgr: manager, created }
   }, [users])
 
+  const activeUsers = useMemo(() => (users ?? []).filter((u) => u.isActive !== false), [users])
+  const disabledCount = (users?.length ?? 0) - activeUsers.length
+
   const filtered = useMemo(() => {
     if (!users) return []
     const q = search.trim().toLowerCase()
@@ -771,6 +793,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       Object.entries(filters).filter(([, v]) => (v as string[]).length > 0)
     ) as Record<string, string[]>
     return users.filter((u) => {
+      if (!showDisabled && u.isActive === false) return false
       if (q) {
         const hitQ =
           u.name.toLowerCase().includes(q) ||
@@ -800,7 +823,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
         matches('created', (v) => v === `m:${u.createdAt ? u.createdAt.slice(0, 7) : ''}`)
       )
     })
-  }, [users, search, filters])
+  }, [users, search, filters, showDisabled])
 
   function setFilter(col: string, values: string[]) {
     setFilters((prev) => ({ ...prev, [col]: values }))
@@ -820,18 +843,28 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       const managerEmails = managerIds
         .map((id) => users?.find((u) => u.id === id)?.email)
         .filter((em): em is string => Boolean(em))
-      await api<{ managerLinked: boolean; defaultPassword: string }>('/api/users', {
+      const r = await api<{
+        updated?: boolean
+        user: { id: string; employeeCode: string; name: string; email: string }
+        changes?: DetailChange[]
+        managerLinked: boolean
+        defaultPassword: string
+      }>('/api/users', {
         method: 'POST',
         body: JSON.stringify({ ...form, managerEmails }),
       })
-      toast({
-        title: (
-          <span className="inline-flex items-center gap-1.5">
-            <UserPlus className="h-4 w-4 text-emerald-500" /> Employee ID created
-          </span>
-        ),
-        description: `${form.name} (${form.employeeCode}) can log in with the default password. They must set their own password on first login. You can view or copy their password from the All Users table.`,
-      })
+      if (r.updated) {
+        setChangesInfo({ name: r.user.name, employeeCode: r.user.employeeCode, changes: r.changes ?? [] })
+      } else {
+        toast({
+          title: (
+            <span className="inline-flex items-center gap-1.5">
+              <UserPlus className="h-4 w-4 text-emerald-500" /> Employee ID created
+            </span>
+          ),
+          description: `${form.name} (${form.employeeCode}) can log in with the default password. They must set their own password on first login. You can view or copy their password from the All Users table.`,
+        })
+      }
       setForm({ ...EMPTY })
       setManagerIds([])
       await loadUsers()
@@ -925,28 +958,52 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
     }
   }
 
-  function askDelete(u: DirectoryUser) {
-    setDeleteTarget(u)
+  function askDisable(u: DirectoryUser) {
+    setDisableTarget(u)
   }
 
-  async function doDelete() {
-    if (!deleteTarget) return
-    setDeleteBusy(true)
+  async function doDisable() {
+    if (!disableTarget) return
+    setDisableBusy(true)
     try {
-      await api(`/api/users/${deleteTarget.id}`, { method: 'DELETE' })
-      toast({
-        title: 'User deleted',
-        description: `${deleteTarget.name} (${deleteTarget.employeeCode}) can no longer log in and was removed from the directory.`,
+      await api(`/api/users/${disableTarget.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: false }),
       })
-      setDeleteTarget(null)
+      toast({
+        title: 'Login disabled',
+        description: `${disableTarget.name} (${disableTarget.employeeCode}) can no longer sign in. Task history stays intact — enable the login again any time.`,
+      })
+      setDisableTarget(null)
       await loadUsers()
     } catch (err) {
       toast({
-        title: 'Delete failed',
+        title: 'Could not disable login',
         description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
       })
     } finally {
-      setDeleteBusy(false)
+      setDisableBusy(false)
+    }
+  }
+
+  async function enableLogin(u: DirectoryUser) {
+    try {
+      await api(`/api/users/${u.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: true }),
+      })
+      toast({
+        title: 'Login enabled',
+        description: `${u.name} (${u.employeeCode}) can sign in again.`,
+      })
+      await loadUsers()
+    } catch (err) {
+      toast({
+        title: 'Could not enable login',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -1088,7 +1145,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
               <ManagerPicker
                 label="Manager(s)"
-                people={users ?? []}
+                people={activeUsers}
                 selected={managerIds}
                 onChange={setManagerIds}
               />
@@ -1141,13 +1198,25 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Users2 className="h-4 w-4 text-brand-600" /> All Users
-                {users && <span className="text-sm font-normal text-slate-400">({users.length})</span>}
+                {users && <span className="text-sm font-normal text-slate-400">({activeUsers.length})</span>}
               </CardTitle>
               <CardDescription>
-                Every employee ID in the system. Passwords are visible to you (admin) only.
+                Every active employee ID. Passwords are visible to you (admin) only.
+                {disabledCount > 0 && ` ${disabledCount} login${disabledCount === 1 ? '' : 's'} disabled.`}
               </CardDescription>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              {disabledCount > 0 && (
+                <Button
+                  type="button"
+                  variant={showDisabled ? 'default' : 'outline'}
+                  size="sm"
+                  className="shrink-0 text-xs"
+                  onClick={() => setShowDisabled((s) => !s)}
+                >
+                  <UserX className="mr-1 h-3.5 w-3.5" /> {showDisabled ? 'Hide' : 'Show'} disabled ({disabledCount})
+                </Button>
+              )}
               {activeFilterCount > 0 && (
                 <Button type="button" variant="outline" size="sm" className="shrink-0 text-xs" onClick={() => setFilters({})}>
                   <FilterX className="mr-1 h-3.5 w-3.5" /> Clear ({activeFilterCount})
@@ -1179,7 +1248,13 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 {/* Mobile / tablet: stacked user cards */}
                 <div className="space-y-2 md:hidden">
                   {filtered.map((u) => (
-                    <div key={u.id} className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm">
+                    <div
+                      key={u.id}
+                      className={cn(
+                        'rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm',
+                        u.isActive === false && 'border-dashed bg-slate-50/70'
+                      )}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="flex items-center gap-1.5 font-medium text-slate-800">
@@ -1187,11 +1262,14 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                             {u.role === 'ADMIN' && (
                               <span className="shrink-0 rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>
                             )}
+                            {u.isActive === false && (
+                              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">DISABLED</span>
+                            )}
                           </p>
                           <p className="break-all text-xs text-slate-500">{u.employeeCode} · {u.email}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
-                          <RowActions user={u} me={me} onEdit={openEdit} onDelete={askDelete} onReset={openReset} />
+                          <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} />
                         </div>
                       </div>
 
@@ -1290,10 +1368,19 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filtered.map((u) => (
-                        <tr key={u.id} className="transition hover:bg-brand-50/40">
+                        <tr
+                          key={u.id}
+                          className={cn(
+                            'transition hover:bg-brand-50/40',
+                            u.isActive === false && 'bg-slate-50/70 text-slate-400'
+                          )}
+                        >
                           <td className="px-3 py-2.5">
                             <p className="font-medium text-slate-800">
                               {u.name} {u.role === 'ADMIN' && <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">ADMIN</span>}
+                              {u.isActive === false && (
+                                <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">DISABLED</span>
+                              )}
                             </p>
                             <p className="break-all text-xs text-slate-500">{u.employeeCode} · {u.email}</p>
                           </td>
@@ -1328,7 +1415,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                           </td>
                           <td className="hidden px-3 py-2.5 text-right md:table-cell">
                             <div className="flex items-center justify-end gap-0.5">
-                              <RowActions user={u} me={me} onEdit={openEdit} onDelete={askDelete} onReset={openReset} />
+                              <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} />
                             </div>
                           </td>
                         </tr>
@@ -1353,7 +1440,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       <BulkCreateDialog open={bulkOpen} onOpenChange={setBulkOpen} onCreated={loadUsers} />
 
       {/* Send a custom push / in-app notification */}
-      <SendNotificationDialog open={sendOpen} onOpenChange={setSendOpen} users={users ?? []} />
+      <SendNotificationDialog open={sendOpen} onOpenChange={setSendOpen} users={activeUsers} />
 
       {/* AI duplicate-process review: admin decides same vs different per group */}
       <ProcessDuplicateDialog
@@ -1465,7 +1552,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
 
             <ManagerPicker
               label="Manager(s)"
-              people={users ?? []}
+              people={activeUsers}
               selected={editManagerIds}
               onChange={setEditManagerIds}
               exclude={editTarget?.id}
@@ -1490,44 +1577,85 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete user confirmation */}
-      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
+      {/* Disable-login confirmation */}
+      <AlertDialog open={disableTarget !== null} onOpenChange={(o) => { if (!o) setDisableTarget(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-4 w-4 text-red-600" />
-              Delete {deleteTarget?.name}?
+              <UserX className="h-4 w-4 text-red-600" />
+              Disable login for {disableTarget?.name}?
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
                 <p className="text-sm text-slate-600">
-                  <strong>{deleteTarget?.employeeCode}</strong> will be permanently blocked from logging in and removed
-                  from the directory. Their existing task history stays intact.
+                  <strong>{disableTarget?.employeeCode}</strong> will not be able to sign in. Their task history and
+                  hierarchy stay intact, and you can enable the login again any time from the same row.
                 </p>
-                {deleteTarget?.role === 'ADMIN' && (
+                {disableTarget?.role === 'ADMIN' && (
                   <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    This is an administrator account. Only delete it if you are sure.
+                    This is an administrator account. Only disable it if you are sure.
                   </p>
                 )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={disableBusy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={deleteBusy}
+              disabled={disableBusy}
               className="bg-red-600 text-white hover:bg-red-700"
               onClick={(e) => {
                 e.preventDefault()
-                doDelete()
+                doDisable()
               }}
             >
-              {deleteBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Delete User
+              {disableBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Disable Login
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Result popup when an Employee ID was re-created and updated instead */}
+      <Dialog open={changesInfo !== null} onOpenChange={(o) => { if (!o) setChangesInfo(null) }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4 text-brand-600" />
+              ID updated — {changesInfo?.name}
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{changesInfo?.employeeCode}</strong> already existed, so its details were updated instead of
+              creating a duplicate ID.
+            </DialogDescription>
+          </DialogHeader>
+
+          {changesInfo && changesInfo.changes.length > 0 ? (
+            <ul className="space-y-1.5">
+              {changesInfo.changes.map((c) => (
+                <li key={c.field} className="rounded-lg border border-slate-200 px-3 py-2">
+                  <p className="text-sm font-medium text-slate-800">{c.field}</p>
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                    <span className="line-through">{c.from}</span>
+                    <ArrowRight className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="font-medium text-brand-700">{c.to}</span>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              No details changed — the existing ID already matches what you entered.
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button type="button" onClick={() => setChangesInfo(null)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

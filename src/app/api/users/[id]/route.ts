@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
-import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
 import { publish } from '@/lib/realtime'
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+import { ensureProcessExists } from '@/lib/processes'
+import { syncUserDetails, UserInputError, type UserDetailInput } from '@/lib/user-sync'
 
 /**
- * PATCH /api/users/[id] — ADMIN only. Update an employee's profile fields.
- * Body may include: employeeCode, name, email, process, designation,
- * managerName, managerEmail, role. Uniqueness is enforced excluding the record
- * itself; the L1 manager link is re-resolved from managerEmail.
+ * PATCH /api/users/[id] — ADMIN only. Update an employee's profile fields, or
+ * enable / disable their login with { isActive: boolean }. Body may include:
+ * employeeCode, name, email, process, designation, role, managerEmails.
+ * Uniqueness is enforced excluding the record itself; manager edges are
+ * re-resolved from managerEmails. The response lists exactly what changed.
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
@@ -30,134 +30,71 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const str = (v: unknown) => (typeof v === 'string' ? String(v).trim() : undefined)
-  const data: Record<string, unknown> = {}
-
-  const employeeCode = str(body.employeeCode)
-  const name = str(body.name)
-  const email = str(body.email)?.toLowerCase()
-  const process = str(body.process)
-  const designation = str(body.designation)
-  const managerName = str(body.managerName)
-  const managerEmails = Array.isArray(body.managerEmails)
-    ? (body.managerEmails as unknown[]).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean)
-    : undefined
-  let role: string | undefined
-
-  if (typeof body.role === 'string') {
-    role = String(body.role).toUpperCase()
-    if (role !== 'ADMIN' && role !== 'EMPLOYEE') {
-      return NextResponse.json({ error: 'Role must be ADMIN or EMPLOYEE' }, { status: 400 })
+  if (typeof body.isActive === 'boolean') {
+    if (id === session.id && !body.isActive) {
+      return NextResponse.json({ error: 'You cannot disable your own login' }, { status: 400 })
     }
-    if (id === session.id && role !== 'ADMIN') {
-      return NextResponse.json({ error: 'You cannot remove your own ADMIN role' }, { status: 400 })
-    }
-  }
-
-  if (employeeCode !== undefined) {
-    if (!employeeCode) return NextResponse.json({ error: 'Employee Code is required' }, { status: 400 })
-    if (employeeCode !== user.employeeCode) {
-      const dupe = await db.user.findFirst({ where: { employeeCode } })
-      if (dupe) return NextResponse.json({ error: `Employee Code "${employeeCode}" already exists` }, { status: 409 })
-    }
-    data.employeeCode = employeeCode
-  }
-  if (name !== undefined) {
-    if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
-    data.name = name
-  }
-  if (email !== undefined) {
-    if (!EMAIL_RE.test(email)) return NextResponse.json({ error: 'Please enter a valid Email ID' }, { status: 400 })
-    if (email !== user.email) {
-      const dupe = await db.user.findFirst({ where: { email } })
-      if (dupe) return NextResponse.json({ error: `Email "${email}" is already registered` }, { status: 409 })
-    }
-    data.email = email
-  }
-  if (process !== undefined) {
-    if (!process) return NextResponse.json({ error: 'Process is required' }, { status: 400 })
-    data.process = process
-  }
-  if (designation !== undefined) {
-    if (!designation) return NextResponse.json({ error: 'Designation is required' }, { status: 400 })
-    data.designation = designation
-  }
-  if (managerName !== undefined) data.managerName = managerName || null
-  if (role !== undefined) data.role = role
-
-  let relinkManager = false
-  let managerIdsToSet: string[] | 'NO_CHANGE' = 'NO_CHANGE'
-  if (managerEmails !== undefined) {
-    if (managerEmails.length === 0) {
-      data.managerEmail = null
-      data.managerName = null
-      data.managerId = null
-      managerIdsToSet = []
-    } else {
-      if (managerEmails.includes(email ?? user.email)) {
-        return NextResponse.json({ error: 'A user cannot be their own manager' }, { status: 400 })
-      }
-      const managers = await resolveManagersByEmail(managerEmails)
-      if (managers.length !== managerEmails.length) {
-        const missing = managerEmails
-          .filter((e) => !managers.some((m) => m.email === e))
-          .join(', ')
-        return NextResponse.json(
-          { error: `Manager email${missing.includes(',') ? 's' : ''} not found: ${missing}` },
-          { status: 400 }
-        )
-      }
-      const primary = managers[0]!
-      data.managerEmail = primary.email
-      data.managerName = primary.name
-      data.managerId = primary.id
-      managerIdsToSet = managers.map((m) => m.id)
-      relinkManager = true
-    }
+    const updated = await db.user.update({ where: { id }, data: { isActive: body.isActive } })
+    publish({ type: 'users', userId: id })
+    return NextResponse.json({
+      user: {
+        id: updated.id,
+        employeeCode: updated.employeeCode,
+        name: updated.name,
+        email: updated.email,
+        isActive: updated.isActive,
+      },
+      changes: [
+        {
+          field: 'Login',
+          from: user.isActive ? 'Enabled' : 'Disabled',
+          to: body.isActive ? 'Enabled' : 'Disabled',
+        },
+      ],
+    })
   }
 
-  if (Object.keys(data).length === 0) {
+  const input: UserDetailInput = {}
+  if ('employeeCode' in body) input.employeeCode = String(body.employeeCode ?? '')
+  if ('name' in body) input.name = String(body.name ?? '')
+  if ('email' in body) input.email = String(body.email ?? '')
+  if ('process' in body) input.process = await ensureProcessExists(body.process)
+  if ('designation' in body) input.designation = String(body.designation ?? '')
+  if (typeof body.role === 'string') input.role = body.role
+  if (Array.isArray(body.managerEmails)) {
+    input.managerEmails = (body.managerEmails as unknown[])
+      .map((e) => String(e || '').trim().toLowerCase())
+      .filter(Boolean)
+  }
+
+  if (Object.keys(input).length === 0) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
-  const updated = await db.user.update({ where: { id }, data })
-
-  // Persist the full set of manager edges whenever managers were edited.
-  if (managerIdsToSet !== 'NO_CHANGE') {
-    await replaceManagerMappings(id, managerIdsToSet)
+  try {
+    const { user: updated, changes } = await syncUserDetails(user, input, { actorId: session.id })
+    publish({ type: 'users', userId: id })
+    return NextResponse.json({
+      user: {
+        id: updated.id,
+        employeeCode: updated.employeeCode,
+        name: updated.name,
+        email: updated.email,
+        process: updated.process,
+        designation: updated.designation,
+        role: updated.role,
+        managerName: updated.managerName,
+        managerEmail: updated.managerEmail,
+      },
+      changes,
+    })
+  } catch (err) {
+    if (err instanceof UserInputError) {
+      return NextResponse.json({ error: err.message }, { status: err.status })
+    }
+    console.error('update user error', err)
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
-
-  // Retroactive link: existing users that named this user as their (primary) manager
-  const finalEmail = updated.email
-  if (relinkManager) {
-    await db.user.updateMany({
-      where: { managerEmail: finalEmail, id: { not: id }, managerId: null },
-      data: { managerId: id },
-    })
-    const existingNamed = await db.user.findMany({
-      where: { managerEmail: finalEmail, id: { not: id } },
-      select: { id: true },
-    })
-    await db.managerMapping.createMany({
-      data: existingNamed.map((e) => ({ employeeId: e.id, managerId: id })),
-      skipDuplicates: true,
-    })
-  }
-
-  publish({ type: 'users', userId: id })
-  return NextResponse.json({
-    user: {
-      id: updated.id,
-      employeeCode: updated.employeeCode,
-      name: updated.name,
-      email: updated.email,
-      process: updated.process,
-      designation: updated.designation,
-      role: updated.role,
-      managerName: updated.managerName,
-      managerEmail: updated.managerEmail,
-    },
-  })
 }
 
 /**

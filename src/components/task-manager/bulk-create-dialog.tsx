@@ -18,14 +18,13 @@ import {
   Loader2,
   UploadCloud,
   X,
-  XCircle,
 } from 'lucide-react'
 
 interface BulkRowResult {
   row: number
   employeeCode: string
   name: string
-  status: 'created' | 'failed'
+  status: 'created' | 'updated' | 'failed'
   message: string
   managerLinked: boolean
 }
@@ -33,6 +32,7 @@ interface BulkRowResult {
 interface BulkResponse {
   totalRows: number
   createdCount: number
+  updatedCount: number
   failedCount: number
   results: BulkRowResult[]
 }
@@ -43,6 +43,14 @@ const TEMPLATE_URL = '/employee-upload-template.xlsx'
 function fileSizeLabel(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
   return `${(bytes / 1024).toFixed(0)} KB`
+}
+
+function countsLabel(r: BulkResponse) {
+  const parts: string[] = []
+  if (r.createdCount) parts.push(`${r.createdCount} created`)
+  if (r.updatedCount) parts.push(`${r.updatedCount} updated`)
+  if (r.failedCount) parts.push(`${r.failedCount} failed`)
+  return parts.join(' · ') || 'No rows processed'
 }
 
 export function BulkCreateDialog({
@@ -99,21 +107,20 @@ export function BulkCreateDialog({
       setResult(data)
       setFile(null)
       if (inputRef.current) inputRef.current.value = ''
-      if (data.createdCount > 0) {
+      if (data.createdCount > 0 || data.updatedCount > 0) {
         onCreated()
-        toast({
-          title: (
-            <span className="inline-flex items-center gap-1.5">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />{' '}
-              {data.createdCount} employee ID{data.createdCount === 1 ? '' : 's'} created
-            </span>
-          ),
-          description:
-            data.failedCount > 0
-              ? `${data.failedCount} row${data.failedCount === 1 ? '' : 's'} had problems — see the details below.`
-              : 'All users get the default password and must change it at first login.',
-        })
       }
+      toast({
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Bulk upload finished — {countsLabel(data)}
+          </span>
+        ),
+        description:
+          data.failedCount > 0
+            ? `${data.failedCount} row${data.failedCount === 1 ? '' : 's'} could not be processed — see the summary below.`
+            : 'Every row was processed. New IDs get the default password and must change it at first login.',
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed — please try again.')
     } finally {
@@ -222,7 +229,7 @@ export function BulkCreateDialog({
             </div>
           )}
 
-          {/* Results */}
+          {/* Consolidated result — one summary block for the whole upload */}
           {result && (
             <div className="space-y-2">
               <div
@@ -233,33 +240,17 @@ export function BulkCreateDialog({
                 }`}
               >
                 {result.failedCount === 0
-                  ? `All done — ${result.createdCount} of ${result.totalRows} employee IDs created.`
-                  : `${result.createdCount} created · ${result.failedCount} failed — fix the rejected rows and re-upload them.`}
+                  ? `All done — ${result.totalRows} of ${result.totalRows} rows processed (${countsLabel(result)}).`
+                  : `${result.createdCount + result.updatedCount} of ${result.totalRows} rows processed — ${countsLabel(result)}.`}
               </div>
-
-              <ul className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-slate-100 p-2 [scrollbar-width:thin]">
-                {result.results.map((r) => (
-                  <li key={`${r.row}-${r.employeeCode}`} className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-slate-50">
-                    {r.status === 'created' ? (
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                    ) : (
-                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                    )}
-                    <div className="min-w-0 text-sm">
-                      <p className="font-medium text-slate-800">
-                        Row {r.row} — {r.name || '—'}{' '}
-                        <span className="font-normal text-slate-500">({r.employeeCode || 'no code'})</span>
-                        {r.managerLinked && (
-                          <span className="ml-2 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">
-                            MANAGER LINKED
-                          </span>
-                        )}
-                      </p>
-                      <p className={`text-xs ${r.status === 'created' ? 'text-slate-500' : 'text-red-600'}`}>{r.message}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              {result.failedCount > 0 && (
+                <p className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                  {result.results
+                    .filter((r) => r.status === 'failed')
+                    .map((r) => `Row ${r.row} (${r.employeeCode || r.name || 'blank'}): ${r.message}`)
+                    .join(' · ')}
+                </p>
+              )}
             </div>
           )}
 

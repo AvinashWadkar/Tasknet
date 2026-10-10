@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { ensureProcessExists, normalizeProcessName } from '@/lib/processes'
 import { publish } from '@/lib/realtime'
+import { syncUserDetails, UserInputError, type SyncableUser } from '@/lib/user-sync'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 const MAX_FILE_BYTES = 2 * 1024 * 1024 // 2 MB
@@ -15,7 +16,7 @@ interface BulkRowResult {
   row: number // Excel row number for easy debugging in the uploaded file
   employeeCode: string
   name: string
-  status: 'created' | 'failed'
+  status: 'created' | 'updated' | 'failed'
   message: string
   managerLinked: boolean
 }
@@ -33,7 +34,7 @@ function pick(row: Record<string, string>, candidates: string[]) {
   return ''
 }
 
-/** POST /api/users/bulk — ADMIN only: create many employee IDs from an uploaded Excel/CSV file. */
+/** POST /api/users/bulk — ADMIN only: create or update employee IDs from an uploaded Excel/CSV file. */
 export async function POST(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
@@ -100,10 +101,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Existing users (for uniqueness + manager-by-email resolution)
-    const existing = await db.user.findMany({ select: { id: true, employeeCode: true, email: true } })
+    // Existing users (for uniqueness, manager-by-email resolution and updates)
+    const existing = await db.user.findMany({
+      select: {
+        id: true,
+        employeeCode: true,
+        name: true,
+        email: true,
+        process: true,
+        designation: true,
+        role: true,
+        managerId: true,
+        managerName: true,
+        managerEmail: true,
+        isActive: true,
+      },
+    })
     const existingCodes = new Set(existing.map((u) => u.employeeCode.toLowerCase()))
     const existingEmails = new Set(existing.map((u) => u.email.toLowerCase()))
+    const userByCode = new Map(existing.map((u) => [u.employeeCode.toLowerCase(), u]))
+    const userByEmail = new Map(existing.map((u) => [u.email.toLowerCase(), u]))
     const userIdByEmail = new Map(existing.map((u) => [u.email.toLowerCase(), u.id]))
 
     // ── Validate every row first ───────────────────────────────────
@@ -117,7 +134,9 @@ export async function POST(req: NextRequest) {
       managerName: string
       managerEmail: string
     }
+    type UpdateRow = ValidRow & { existing: SyncableUser }
     const valid: ValidRow[] = []
+    const updates: UpdateRow[] = []
     const results: BulkRowResult[] = []
     const seenCodes = new Set<string>()
     const seenEmails = new Set<string>()
@@ -152,12 +171,8 @@ export async function POST(req: NextRequest) {
         fail(`Invalid Email ID "${email}"`)
         return
       }
-      if (seenCodes.has(codeKey) || existingCodes.has(codeKey)) {
-        fail(`Employee Code "${employeeCode}" already ${seenCodes.has(codeKey) ? 'appears twice in this file' : 'exists in the system'}`)
-        return
-      }
-      if (seenEmails.has(email) || existingEmails.has(email)) {
-        fail(`Email "${email}" is ${seenEmails.has(email) ? 'used twice in this file' : 'already registered'}`)
+      if (seenCodes.has(codeKey)) {
+        fail(`Employee Code "${employeeCode}" appears twice in this file`)
         return
       }
       if (managerEmail) {
@@ -169,6 +184,28 @@ export async function POST(req: NextRequest) {
           fail('A user cannot be their own L1 manager')
           return
         }
+      }
+
+      const existingUser = userByCode.get(codeKey)
+      if (existingUser) {
+        const emailOwner = userByEmail.get(email)
+        if (emailOwner && emailOwner.id !== existingUser.id) {
+          fail(`Email "${email}" is already registered to ${emailOwner.employeeCode}`)
+          return
+        }
+        if (seenEmails.has(email)) {
+          fail(`Email "${email}" is used twice in this file`)
+          return
+        }
+        seenCodes.add(codeKey)
+        seenEmails.add(email)
+        updates.push({ row: excelRow, employeeCode, name, email, process, designation, managerName, managerEmail, existing: existingUser })
+        return
+      }
+
+      if (seenEmails.has(email) || existingEmails.has(email)) {
+        fail(`Email "${email}" is ${seenEmails.has(email) ? 'used twice in this file' : 'already registered'}`)
+        return
       }
 
       seenCodes.add(codeKey)
@@ -191,11 +228,12 @@ export async function POST(req: NextRequest) {
 
     // Register every process name in the sheet with the controlled list first,
     // so imports cannot create values that never show up in the admin dropdown.
-    for (const name of new Set(valid.map((v) => normalizeProcessName(v.process)).filter(Boolean))) {
+    const allProcessNames = [...valid, ...updates].map((v) => normalizeProcessName(v.process))
+    for (const name of new Set(allProcessNames.filter(Boolean))) {
       await ensureProcessExists(name)
     }
 
-    // ── Create valid rows ──────────────────────────────────────────
+    // ── Create brand-new rows ──────────────────────────────────────
     const hash = await bcrypt.hash(DEFAULT_PASSWORD, 10) // same default for every row
     const createdEmailToId = new Map<string, string>()
     const createdIds: string[] = []
@@ -246,6 +284,43 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Update rows whose Employee Code already exists ─────────────
+    for (const v of updates) {
+      try {
+        const { user: saved, changes } = await syncUserDetails(
+          v.existing,
+          {
+            employeeCode: v.employeeCode,
+            name: v.name,
+            email: v.email,
+            process: normalizeProcessName(v.process),
+            designation: v.designation,
+            ...(v.managerEmail ? { managerEmails: [v.managerEmail] } : {}),
+            reactivate: true,
+          }
+        )
+        results.push({
+          row: v.row,
+          employeeCode: saved.employeeCode,
+          name: saved.name,
+          status: 'updated',
+          message: changes.length
+            ? `${v.existing.isActive ? 'Updated' : 'Login re-enabled'} — ${changes.map((c) => c.field).join(', ')} changed`
+            : 'Already up to date — no changes needed',
+          managerLinked: Boolean(v.managerEmail),
+        })
+      } catch (err) {
+        results.push({
+          row: v.row,
+          employeeCode: v.employeeCode,
+          name: v.name,
+          status: 'failed',
+          message: err instanceof UserInputError ? err.message : 'Could not update this user',
+          managerLinked: false,
+        })
+      }
+    }
+
     // Retroactive link (mirrors single-user creation): users that named one of
     // the freshly created employees as their L1 manager get linked now.
     for (const id of createdIds) {
@@ -266,10 +341,11 @@ export async function POST(req: NextRequest) {
     }
 
     const createdCount = results.filter((r) => r.status === 'created').length
+    const updatedCount = results.filter((r) => r.status === 'updated').length
     const failedCount = results.filter((r) => r.status === 'failed').length
 
     publish({ type: 'users' })
-    return NextResponse.json({ totalRows: dataRows, createdCount, failedCount, results })
+    return NextResponse.json({ totalRows: dataRows, createdCount, updatedCount, failedCount, results })
   } catch (e) {
     console.error('bulk create users error', e)
     return NextResponse.json({ error: 'Something went wrong while processing the file. Please try again.' }, { status: 500 })

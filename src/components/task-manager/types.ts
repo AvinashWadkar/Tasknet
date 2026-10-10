@@ -86,6 +86,7 @@ export interface DirectoryUser {
   managerName?: string | null
   managerEmail?: string | null
   managers?: ManagerLite[] // every mapped manager (equal); empty = top level
+  isActive?: boolean // false = login disabled by the admin
   isFirstLogin?: boolean
   createdAt?: string
   password?: string | null // ADMIN-only: current password (plaintext mirror)

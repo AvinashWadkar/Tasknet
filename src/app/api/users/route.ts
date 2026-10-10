@@ -5,17 +5,21 @@ import { getSessionUser } from '@/lib/auth'
 import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
 import { ensureProcessExists } from '@/lib/processes'
 import { publish } from '@/lib/realtime'
+import { syncUserDetails, UserInputError } from '@/lib/user-sync'
 
 const DEFAULT_PASSWORD = 'Digitide@123'
 
 /** GET /api/users — directory list for task assignment (any signed-in user). Admin gets extended fields. */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
+  const includeInactive =
+    session.role === 'ADMIN' && new URL(req.url).searchParams.get('includeInactive') === '1'
+
   const [users, mappings] = await Promise.all([
     db.user.findMany({
-      where: { isActive: true },
+      where: includeInactive ? {} : { isActive: true },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -28,12 +32,15 @@ export async function GET() {
         managerName: true,
         managerEmail: true,
         isFirstLogin: true,
+        isActive: true,
         createdAt: true,
         passwordPlain: true, // ADMIN-only; stripped below for non-admins
       },
     }),
     db.managerMapping.findMany({
-      where: { employee: { isActive: true }, manager: { isActive: true } },
+      where: includeInactive
+        ? { manager: { isActive: true } }
+        : { employee: { isActive: true }, manager: { isActive: true } },
       select: {
         employeeId: true,
         manager: { select: { id: true, name: true, email: true, employeeCode: true } },
@@ -115,7 +122,26 @@ export async function POST(req: NextRequest) {
 
     const dupeCode = await db.user.findFirst({ where: { employeeCode } })
     if (dupeCode) {
-      return NextResponse.json({ error: `Employee Code "${employeeCode}" already exists` }, { status: 409 })
+      try {
+        const { user: updated, changes } = await syncUserDetails(
+          dupeCode,
+          { employeeCode, name, email, process, designation, managerEmails, reactivate: true },
+          { actorId: session.id }
+        )
+        publish({ type: 'users', userId: updated.id })
+        return NextResponse.json({
+          user: { id: updated.id, employeeCode: updated.employeeCode, name: updated.name, email: updated.email },
+          changes,
+          updated: true,
+          managerLinked: managerEmails.length > 0,
+          defaultPassword: DEFAULT_PASSWORD,
+        })
+      } catch (err) {
+        if (err instanceof UserInputError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
     }
     const dupeEmail = await db.user.findFirst({ where: { email } })
     if (dupeEmail) {
