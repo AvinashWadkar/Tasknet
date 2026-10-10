@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { api } from './api'
 import { cn } from '@/lib/utils'
-import { AlertTriangle, CheckCircle2, Loader2, Sparkles, Wand2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, Sparkles, Wand2, X } from 'lucide-react'
 
 /** One AI-suggested cluster of process names that may be the same thing. */
 interface DuplicateGroup {
@@ -41,8 +41,10 @@ const CONFIDENCE_LABEL: Record<DuplicateGroup['confidence'], string> = {
  * differently — same or different?"
  *
  * Each group is decided independently. Merging rewrites every matching user to
- * the canonical spelling and drops the variant from the list; skipping leaves
- * both alone. Nothing is written until the admin picks.
+ * the canonical spelling and drops the variant from the list; choosing
+ * "Different" remembers the answer (POST /api/processes/decide) so the same
+ * pair never comes back, and the footer can forget every remembered answer.
+ * Nothing is written until the admin picks.
  */
 export function ProcessDuplicateDialog({
   open,
@@ -58,19 +60,30 @@ export function ProcessDuplicateDialog({
   const [loading, setLoading] = useState(false)
   const [source, setSource] = useState<'ai' | 'fallback'>('ai')
   const [checked, setChecked] = useState(0)
+  const [remembered, setRemembered] = useState(0)
+  const [suppressed, setSuppressed] = useState(0)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
 
   async function run() {
     setLoading(true)
     try {
-      const r = await api<{ groups: DuplicateGroup[]; source: 'ai' | 'fallback'; checked: number }>(
-        '/api/processes/analyze',
-        { method: 'POST', body: JSON.stringify({ refresh: true }) }
-      )
+      const r = await api<{
+        groups: DuplicateGroup[]
+        source: 'ai' | 'fallback'
+        checked: number
+        remembered?: number
+        suppressed?: number
+      }>('/api/processes/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ refresh: true }),
+      })
       setGroups(r.groups)
       setSource(r.source)
       setChecked(r.checked)
+      setRemembered(r.remembered ?? 0)
+      setSuppressed(r.suppressed ?? 0)
       setDismissed(new Set())
     } catch (err) {
       setGroups([])
@@ -121,7 +134,47 @@ export function ProcessDuplicateDialog({
   }
 
   function skip(g: DuplicateGroup) {
+    const names = g.names.map((n) => n.name)
     setDismissed((prev) => new Set(prev).add(g.id))
+    api<{ ok: boolean; total: number }>('/api/processes/decide', {
+      method: 'POST',
+      body: JSON.stringify({ names, decision: 'DIFFERENT' }),
+    })
+      .then((r) => {
+        setRemembered(r.total)
+        toast({
+          title: 'Kept separate',
+          description: `Got it — ${names.length} names saved as different processes. This pair won’t be suggested again.`,
+        })
+      })
+      .catch((err) => {
+        toast({
+          title: 'Could not remember that answer',
+          description:
+            err instanceof Error ? err.message : 'It may be suggested again next time.',
+          variant: 'destructive',
+        })
+      })
+  }
+
+  async function forgetAnswers() {
+    setClearing(true)
+    try {
+      await api('/api/processes/decide', { method: 'DELETE' })
+      toast({
+        title: 'Remembered answers cleared',
+        description: 'The analysis can suggest every name pair again.',
+      })
+      await run()
+    } catch (err) {
+      toast({
+        title: 'Could not clear answers',
+        description: err instanceof Error ? err.message : 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setClearing(false)
+    }
   }
 
   function close() {
@@ -144,6 +197,18 @@ export function ProcessDuplicateDialog({
                 : `${pending.length} pair${pending.length === 1 ? '' : 's'} below may be the same process spelled differently. Nothing changes until you choose.`}
           </DialogDescription>
         </DialogHeader>
+
+        {!loading && remembered > 0 && (
+          <p className="flex items-start gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+            <span>
+              Honouring {remembered} answer{remembered === 1 ? '' : 's'} you gave earlier
+              {suppressed > 0
+                ? ` — ${suppressed} of them still match names in the current list, so they are not suggested again.`
+                : '.'}
+            </span>
+          </p>
+        )}
 
         {source === 'fallback' && !loading && groups.length > 0 && (
           <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -259,6 +324,22 @@ export function ProcessDuplicateDialog({
         )}
 
         <DialogFooter className="gap-2 sm:justify-end">
+          {remembered > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={forgetAnswers}
+              disabled={loading || clearing || busyId !== null}
+              className="mr-auto text-slate-500"
+            >
+              {clearing ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-1.5 h-4 w-4" />
+              )}
+              Reset remembered answers
+            </Button>
+          )}
           <Button type="button" variant="outline" onClick={run} disabled={loading || busyId !== null}>
             {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1.5 h-4 w-4" />}
             Re-run analysis

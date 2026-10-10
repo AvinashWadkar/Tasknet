@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { normalizeProcessName } from '@/lib/processes'
+import {
+  decidedPairSet,
+  groupConflicts,
+  loadDecisions,
+  pairKey,
+  processKey,
+  type DecisionRow,
+} from '@/lib/process-decisions'
 
 /**
  * POST /api/processes/analyze — ADMIN only: AI pass over every process name the
@@ -14,7 +22,9 @@ import { normalizeProcessName } from '@/lib/processes'
  * is where the scattered spellings live.
  *
  * The AI only proposes; nothing is written. The admin decides per group in the
- * popup, then calls /api/processes/merge.
+ * popup, then calls /api/processes/merge (merge) or /api/processes/decide
+ * (keep separate). Remembered "different" answers are passed back to the AI as
+ * exclusions and filtered out of the result, so answered pairs never recur.
  *
  * Falls back to exact-spelling matching when Gemini is unavailable, so the
  * feature still works offline — `source: 'fallback'` is surfaced to the admin.
@@ -80,11 +90,13 @@ function pickCanonical(entries: NameEntry[]): string {
 }
 
 /** Offline grouping: normalised-spelling and word-order equality. Union-find so
- *  a name matching via two different keys still lands in one group. */
-function fallbackGroups(entries: NameEntry[]): DuplicateGroup[] {
+ *  a name matching via two different keys still lands in one group. Pairs the
+ *  admin already confirmed DIFFERENT are never unioned, so their answer sticks. */
+function fallbackGroups(entries: NameEntry[], decided: Set<string>): DuplicateGroup[] {
   const parent = entries.map((_, i) => i)
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])))
   const union = (a: number, b: number) => {
+    if (decided.has(pairKey(processKey(entries[a].name), processKey(entries[b].name)))) return
     const ra = find(a)
     const rb = find(b)
     if (ra !== rb) parent[rb] = ra
@@ -136,7 +148,7 @@ function fallbackGroups(entries: NameEntry[]): DuplicateGroup[] {
   return groups
 }
 
-async function aiGroups(entries: NameEntry[]): Promise<DuplicateGroup[]> {
+async function aiGroups(entries: NameEntry[], exclusions: DecisionRow[]): Promise<DuplicateGroup[]> {
   const baseUrl = (process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '')
   const apiKey = process.env.GEMINI_API_KEY || ''
   const model = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite'
@@ -153,17 +165,21 @@ async function aiGroups(entries: NameEntry[]): Promise<DuplicateGroup[]> {
     '- Do not invent names; every returned name must appear verbatim in the input.\n' +
     '- Suggest one canonical spelling per cluster: Title Case, no underscores, keep official abbreviations intact.\n' +
     '- confidence: HIGH for trivial spelling variants, MEDIUM for clear abbreviations, LOW for judgement calls.\n' +
+    '- The admin already confirmed that each pair listed in "already_different" is NOT the same process. ' +
+    'Never place both members of such a pair in the same cluster — respect the admin\'s earlier answers.\n' +
     'Respond with STRICT JSON only, no markdown fences and no extra text: ' +
     '{"groups":[{"names":["<exact input name>", "..."],' +
     '"canonical":"<best spelling>","reason":"<max 120 chars>","confidence":"HIGH|MEDIUM|LOW"}]} ' +
     'Return {"groups":[]} if nothing is likely the same process.'
+
+  const alreadyDifferent = exclusions.slice(0, 200).map((r) => [r.nameA, r.nameB])
 
   const res = await fetch(`${baseUrl}/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: sys }] },
-      contents: [{ role: 'user', parts: [{ text: JSON.stringify({ processes: entries }) }] }],
+      contents: [{ role: 'user', parts: [{ text: JSON.stringify({ processes: entries, already_different: alreadyDifferent }) }] }],
       generationConfig: {
         temperature: 0.1,
         maxOutputTokens: 2048,
@@ -252,14 +268,34 @@ export async function POST(req: NextRequest) {
   }
 
   const entries = (await loadEntries()).slice(0, MAX_NAMES)
-  if (entries.length < 2) return NextResponse.json({ groups: [], source: 'ai', checked: entries.length })
+  if (entries.length < 2) {
+    return NextResponse.json({ groups: [], source: 'ai', checked: entries.length, remembered: 0, suppressed: 0 })
+  }
 
-  // Same name set → same answer; keeps repeat visits from re-spending the AI call.
-  const key = entries.map((e) => `${e.name}~${e.users}`).join('|')
+  // Answers the admin has already given in this popup. They are fed to the AI as
+  // hard exclusions AND applied as a post-filter, so a "these are different"
+  // decision can never resurface — even if the model ignores the instruction.
+  const decisionRows = await loadDecisions()
+  const decided = decidedPairSet(decisionRows)
+
+  // How many remembered answers still apply to names currently in the list.
+  const entryKeys = new Set(entries.map((e) => processKey(e.name)))
+  const suppressed = decisionRows.filter((r) => entryKeys.has(r.nameA) && entryKeys.has(r.nameB)).length
+
+  // Same name set + same remembered answers → same result; keeps repeat visits
+  // from re-spending the AI call, and re-runs once a new answer is stored.
+  const key = entries.map((e) => `${e.name}~${e.users}`).join('|') + `::d${decisionRows.length}`
   if (!refresh) {
     const hit = cache.get(key)
     if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
-      return NextResponse.json({ groups: hit.groups, source: hit.source, cached: true, checked: entries.length })
+      return NextResponse.json({
+        groups: hit.groups,
+        source: hit.source,
+        cached: true,
+        checked: entries.length,
+        remembered: decisionRows.length,
+        suppressed,
+      })
     }
   }
 
@@ -267,14 +303,18 @@ export async function POST(req: NextRequest) {
   let groups: DuplicateGroup[] = []
 
   try {
-    groups = await aiGroups(entries)
+    groups = await aiGroups(entries, decisionRows)
     source = 'ai'
   } catch (e) {
     console.warn('[processes] AI duplicate analysis unavailable, using exact-match fallback:', e)
   }
 
-  if (source === 'fallback') groups = fallbackGroups(entries)
+  if (source === 'fallback') groups = fallbackGroups(entries, decided)
+
+  // Safety net for the AI path: drop any cluster that still pairs two names the
+  // admin already ruled different, even if the model ignored the instruction.
+  groups = groups.filter((g) => !groupConflicts(g.names.map((n) => processKey(n.name)), decided))
 
   cache.set(key, { ts: Date.now(), groups, source })
-  return NextResponse.json({ groups, source, checked: entries.length })
+  return NextResponse.json({ groups, source, checked: entries.length, remembered: decisionRows.length, suppressed })
 }

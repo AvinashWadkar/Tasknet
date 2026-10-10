@@ -59,6 +59,27 @@ model Process {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ProcessDecision: an admin's remembered answer from the "Review
+// process names" popup. When the admin confirms two spellings are
+// DIFFERENT processes, we store the pair so the AI is told to stop
+// suggesting it and the popup stops nagging on the same names.
+// Names are normalised + lowercased with nameA < nameB, so one
+// unordered pair is always exactly one row.
+// ─────────────────────────────────────────────────────────────
+model ProcessDecision {
+  id        String   @id @default(cuid())
+  nameA     String
+  nameB     String
+  decision  String   @default("DIFFERENT") // DIFFERENT | SAME
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([nameA, nameB])
+  @@index([nameA])
+  @@index([nameB])
+}
+
+// ─────────────────────────────────────────────────────────────
 // ManagerMapping: an employee can report to more than one manager.
 // Both edges are equal — each manager sees and tracks the employee.
 // User.managerId (above) is kept as the "primary" link for legacy
