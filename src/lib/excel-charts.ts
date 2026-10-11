@@ -1,4 +1,7 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import sharp from 'sharp'
+import { parse as parseFont } from 'opentype.js'
 import type {
   EmployeeStat,
   GroupStat,
@@ -27,8 +30,6 @@ export const CHART_COLORS = {
   violet: '#7c3aed',
 } as const
 
-const FONT = `"Segoe UI", Arial, "Helvetica Neue", sans-serif`
-
 export interface ChartImage {
   key: string
   title: string
@@ -43,15 +44,67 @@ interface Slice {
   color: string
 }
 
-const esc = (s: string) =>
-  s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+type Font = ReturnType<typeof parseFont>
+
+let _font: Font | null = null
+function getFont(): Font {
+  if (!_font) {
+    const file = path.join(process.cwd(), 'src', 'lib', 'fonts', 'NotoSans-Regular.ttf')
+    _font = parseFont(fs.readFileSync(file))
+  }
+  return _font
+}
+
+type TextAnchor = 'start' | 'middle' | 'end'
+
+/** Replace glyphs the bundled font can't render so they never become boxes. */
+function sanitize(str: string): string {
+  const f = getFont()
+  let out = ''
+  for (const ch of str) {
+    if (ch === '\n' || ch === '\r' || ch === '\t') {
+      out += ' '
+    } else {
+      out += f.charToGlyph(ch).index === 0 ? '?' : ch
+    }
+  }
+  return out
+}
+
+/** Width of a label in SVG user units at the given font size. */
+function textWidth(str: string, size: number): number {
+  return getFont().getAdvanceWidth(sanitize(str), size, { kerning: true })
+}
+
+/**
+ * Render a text label as an SVG <path>. Sharp's librsvg has no working font
+ * backend on many hosts (notably Windows), so <text> rasterizes into tofu
+ * boxes. Drawing the glyph outlines from a bundled font removes any dependency
+ * on system fonts. `bold` is faked with a light stroke since only the regular
+ * weight is bundled.
+ */
+function text(
+  x: number,
+  y: number,
+  str: string | number,
+  opts: { size?: number; color?: string; anchor?: TextAnchor; bold?: boolean } = {}
+): string {
+  const size = opts.size ?? 12
+  const color = opts.color ?? CHART_COLORS.slate
+  const anchor = opts.anchor ?? 'start'
+  const value = sanitize(String(str))
+  let startX = x
+  if (anchor !== 'start') {
+    const w = textWidth(value, size)
+    startX = anchor === 'middle' ? x - w / 2 : x - w
+  }
+  const d = getFont().getPath(value, startX, y, size, { kerning: true }).toPathData(2)
+  const stroke = opts.bold ? ` stroke="${color}" stroke-width="${(size * 0.04).toFixed(2)}"` : ''
+  return `<path d="${d}" fill="${color}"${stroke}/>`
+}
 
 const svgDoc = (w: number, h: number, body: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family='${FONT}'>` +
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
   `<rect width="${w}" height="${h}" fill="#ffffff"/>` +
   body +
   '</svg>'
@@ -83,13 +136,11 @@ function donutSvg(slices: Slice[], title: string): string {
 
   const parts: string[] = []
   parts.push(
-    `<text x="${W / 2}" y="26" text-anchor="middle" font-size="15" font-weight="700" fill="${CHART_COLORS.brandDark}">${esc(title)}</text>`
+    text(W / 2, 26, title, { size: 15, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true })
   )
 
   if (total === 0) {
-    parts.push(
-      `<text x="${cx}" y="${cy - 8}" text-anchor="middle" font-size="13" fill="${CHART_COLORS.slateLight}">No data</text>`
-    )
+    parts.push(text(cx, cy - 8, 'No data', { size: 13, color: CHART_COLORS.slateLight, anchor: 'middle' }))
   } else {
     let angle = -Math.PI / 2
     for (const s of slices) {
@@ -101,8 +152,8 @@ function donutSvg(slices: Slice[], title: string): string {
       angle = a2
     }
     parts.push(
-      `<text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="26" font-weight="700" fill="${CHART_COLORS.brandDark}">${total}</text>`,
-      `<text x="${cx}" y="${cy + 18}" text-anchor="middle" font-size="10" fill="${CHART_COLORS.slateLight}">assignments</text>`
+      text(cx, cy - 2, total, { size: 26, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true }),
+      text(cx, cy + 18, 'assignments', { size: 10, color: CHART_COLORS.slateLight, anchor: 'middle' })
     )
   }
 
@@ -112,8 +163,13 @@ function donutSvg(slices: Slice[], title: string): string {
     const ly = 30 + i * 34
     legendRows.push(
       `<rect x="${legendX}" y="${ly - 10}" width="12" height="12" rx="3" fill="${s.color}"/>`,
-      `<text x="${legendX + 20}" y="${ly}" font-size="12" fill="${CHART_COLORS.slate}">${esc(s.label)}</text>`,
-      `<text x="${legendX + 196}" y="${ly}" text-anchor="end" font-size="12" font-weight="600" fill="${CHART_COLORS.brandDark}">${s.value}${total ? ` (${Math.round((s.value / total) * 100)}%)` : ''}</text>`
+      text(legendX + 20, ly, s.label, { size: 12, color: CHART_COLORS.slate }),
+      text(
+        legendX + 196,
+        ly,
+        `${s.value}${total ? ` (${Math.round((s.value / total) * 100)}%)` : ''}`,
+        { size: 12, color: CHART_COLORS.brandDark, anchor: 'end', bold: true }
+      )
     )
   })
   parts.push(...legendRows)
@@ -141,12 +197,16 @@ function trendSvg(points: MonthPoint[], title: string): string {
 
   const parts: string[] = []
   parts.push(
-    `<text x="${W / 2}" y="20" text-anchor="middle" font-size="15" font-weight="700" fill="${CHART_COLORS.brandDark}">${esc(title)}</text>`
+    text(W / 2, 26, title, { size: 15, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true })
   )
 
   if (points.length === 0) {
     parts.push(
-      `<text x="${(mL + W - mR) / 2}" y="${mT + ch / 2}" text-anchor="middle" font-size="13" fill="${CHART_COLORS.slateLight}">No data</text>`
+      text((mL + W - mR) / 2, mT + ch / 2, 'No data', {
+        size: 13,
+        color: CHART_COLORS.slateLight,
+        anchor: 'middle',
+      })
     )
     return svgDoc(W, H, parts.join(''))
   }
@@ -165,14 +225,14 @@ function trendSvg(points: MonthPoint[], title: string): string {
     const val = Math.round((dueMax * (ticks - t)) / ticks)
     parts.push(
       `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="${CHART_COLORS.grid}" stroke-width="1"/>`,
-      `<text x="${mL - 6}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="${CHART_COLORS.slateLight}">${val}</text>`
+      text(mL - 6, y + 4, val, { size: 10.5, color: CHART_COLORS.slateLight, anchor: 'end' })
     )
   }
 
   // X labels
   points.forEach((p, i) => {
     parts.push(
-      `<text x="${xOf(i)}" y="${H - 8}" text-anchor="middle" font-size="10.5" fill="${CHART_COLORS.slateLight}">${esc(p.label)}</text>`
+      text(xOf(i), H - 8, p.label, { size: 10.5, color: CHART_COLORS.slateLight, anchor: 'middle' })
     )
   })
 
@@ -214,14 +274,14 @@ function trendSvg(points: MonthPoint[], title: string): string {
   ]
   let lx = mL
   for (const [label, color, dashed] of legend) {
-    const textW = label.length * 7
+    const labelW = textWidth(label, 11)
     parts.push(
       dashed
         ? `<line x1="${lx}" y1="20" x2="${lx + 18}" y2="20" stroke="${color}" stroke-width="2.6" stroke-dasharray="5 3"/>`
         : `<line x1="${lx}" y1="20" x2="${lx + 18}" y2="20" stroke="${color}" stroke-width="2.6"/>`,
-      `<text x="${lx + 24}" y="23.5" font-size="11" fill="${CHART_COLORS.slate}">${label}</text>`
+      text(lx + 24, 23.5, label, { size: 11, color: CHART_COLORS.slate })
     )
-    lx += 18 + textW + 22
+    lx += 18 + labelW + 22
   }
 
   return svgDoc(W, H, parts.join(''))
@@ -247,12 +307,12 @@ function horizontalStackedBarsSvg(
 
   const parts: string[] = []
   parts.push(
-    `<text x="${W / 2}" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="${CHART_COLORS.brandDark}">${esc(title)}</text>`
+    text(W / 2, 24, title, { size: 15, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true })
   )
 
   if (rows.length === 0) {
     parts.push(
-      `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="13" fill="${CHART_COLORS.slateLight}">No data</text>`
+      text(W / 2, H / 2, 'No data', { size: 13, color: CHART_COLORS.slateLight, anchor: 'middle' })
     )
     return svgDoc(W, H, parts.join(''))
   }
@@ -263,7 +323,11 @@ function horizontalStackedBarsSvg(
     const x = mL + (plotW / vTicks) * t
     parts.push(
       `<line x1="${x}" y1="${mT - 4}" x2="${x}" y2="${H - mB}" stroke="${CHART_COLORS.grid}" stroke-width="1"/>`,
-      `<text x="${x}" y="${H - mB + 4}" text-anchor="middle" font-size="9.5" fill="${CHART_COLORS.slateLight}">${Math.round((maxTotal * t) / vTicks)}</text>`
+      text(x, H - mB + 4, Math.round((maxTotal * t) / vTicks), {
+        size: 9.5,
+        color: CHART_COLORS.slateLight,
+        anchor: 'middle',
+      })
     )
   }
 
@@ -280,19 +344,23 @@ function horizontalStackedBarsSvg(
       accX += w
     })
     parts.push(
-      `<text x="${mL - 8}" y="${labelY}" text-anchor="end" font-size="10.5" fill="${CHART_COLORS.slate}" font-weight="600">${esc(r.label)}</text>`,
+      text(mL - 8, labelY, r.label, {
+        size: 10.5,
+        color: CHART_COLORS.slate,
+        anchor: 'end',
+        bold: true,
+      }),
       ...segs
     )
   })
 
   // Legend
   let lx = mL
-  const estLegend = (n: string) => n.length * 7.2
   for (const l of legend) {
-    const w = estLegend(l.name)
+    const w = textWidth(l.name, 11)
     parts.push(
       `<rect x="${lx}" y="38" width="12" height="12" rx="2.5" fill="${l.color}"/>`,
-      `<text x="${lx + 16}" y="47.5" font-size="11" fill="${CHART_COLORS.slate}">${esc(l.name)}</text>`
+      text(lx + 16, 47.5, l.name, { size: 11, color: CHART_COLORS.slate })
     )
     lx += 16 + w + 20
   }
@@ -312,12 +380,12 @@ function leaderboardSvg(rows: { name: string; rate: number; done: number; total:
 
   const parts: string[] = []
   parts.push(
-    `<text x="${W / 2}" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="${CHART_COLORS.brandDark}">${esc(title)}</text>`
+    text(W / 2, 24, title, { size: 15, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true })
   )
 
   if (rows.length === 0) {
     parts.push(
-      `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" font-size="13" fill="${CHART_COLORS.slateLight}">No data</text>`
+      text(W / 2, H / 2, 'No data', { size: 13, color: CHART_COLORS.slateLight, anchor: 'middle' })
     )
     return svgDoc(W, H, parts.join(''))
   }
@@ -329,12 +397,22 @@ function leaderboardSvg(rows: { name: string; rate: number; done: number; total:
     const color = r.rate >= 75 ? CHART_COLORS.emerald : r.rate >= 40 ? CHART_COLORS.brandMid : CHART_COLORS.amber
     parts.push(
       `<circle cx="16" cy="${y + 26}" r="9" fill="#eef2f7"/>`,
-      `<text x="16" y="${y + 29}" text-anchor="middle" font-size="10.5" font-weight="600" fill="${CHART_COLORS.slate}">${i + 1}</text>`,
-      `<text x="${mL}" y="${y + 14}" font-size="11.5" font-weight="600" fill="${CHART_COLORS.brandDark}">${esc(r.name)}</text>`,
-      `<text x="${mL}" y="${y + 34}" font-size="9.5" fill="${CHART_COLORS.slateLight}">${r.done}/${r.total} done${r.overdue > 0 ? ' · ' + r.overdue + ' overdue' : ' · nothing overdue'}</text>`,
+      text(16, y + 29, i + 1, { size: 10.5, color: CHART_COLORS.slate, anchor: 'middle', bold: true }),
+      text(mL, y + 14, r.name, { size: 11.5, color: CHART_COLORS.brandDark, bold: true }),
+      text(
+        mL,
+        y + 34,
+        `${r.done}/${r.total} done${r.overdue > 0 ? ' · ' + r.overdue + ' overdue' : ' · nothing overdue'}`,
+        { size: 9.5, color: CHART_COLORS.slateLight }
+      ),
       `<rect x="${mL}" y="${barY}" width="${plotW}" height="${barH}" rx="${barH / 2}" fill="${CHART_COLORS.grid}"/>`,
       `<rect x="${mL}" y="${barY}" width="${Math.max(1.5, (r.rate / 100) * plotW)}" height="${barH}" rx="${barH / 2}" fill="${color}"/>`,
-      `<text x="${mL + plotW}" y="${barY + barH - 2}" text-anchor="end" font-size="12" font-weight="700" fill="${CHART_COLORS.brandDark}">${r.rate}%</text>`
+      text(mL + plotW, barY + barH - 2, `${r.rate}%`, {
+        size: 12,
+        color: CHART_COLORS.brandDark,
+        anchor: 'end',
+        bold: true,
+      })
     )
   })
 
@@ -357,12 +435,16 @@ function verticalStackedBarsSvg(
 
   const parts: string[] = []
   parts.push(
-    `<text x="${W / 2}" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="${CHART_COLORS.brandDark}">${esc(title)}</text>`
+    text(W / 2, 24, title, { size: 15, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true })
   )
 
   if (rows.length === 0) {
     parts.push(
-      `<text x="${W / 2}" y="${mT + ch / 2}" text-anchor="middle" font-size="13" fill="${CHART_COLORS.slateLight}">No data</text>`
+      text(W / 2, mT + ch / 2, 'No data', {
+        size: 13,
+        color: CHART_COLORS.slateLight,
+        anchor: 'middle',
+      })
     )
     return svgDoc(W, H, parts.join(''))
   }
@@ -377,7 +459,7 @@ function verticalStackedBarsSvg(
     const val = Math.round((maxTotal * (ticks - t)) / ticks)
     parts.push(
       `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="${CHART_COLORS.grid}" stroke-width="1"/>`,
-      `<text x="${mL - 6}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="${CHART_COLORS.slateLight}">${val}</text>`
+      text(mL - 6, y + 4, val, { size: 10.5, color: CHART_COLORS.slateLight, anchor: 'end' })
     )
   }
   parts.push(
@@ -399,17 +481,23 @@ function verticalStackedBarsSvg(
     let label = r.label
     const maxChars = Math.floor(barW / 6.2)
     if (label.length > maxChars) label = label.slice(0, maxChars - 1) + '…'
+    const labelCx = gx + barW / 2
+    const labelCy = H - 10
     parts.push(
-      `<text x="${gx + barW / 2}" y="${H - 10}" text-anchor="middle" font-size="10" fill="${CHART_COLORS.slate}" transform="rotate(-16 ${gx + barW / 2} ${H - 10})">${esc(label)}</text>`
+      `<g transform="rotate(-16 ${labelCx} ${labelCy})">${text(labelCx, labelCy, label, {
+        size: 10,
+        color: CHART_COLORS.slate,
+        anchor: 'middle',
+      })}</g>`
     )
   })
 
   let lx = mL
   for (const l of legend) {
-    const w = l.name.length * 7.2
+    const w = textWidth(l.name, 11)
     parts.push(
       `<rect x="${lx}" y="40" width="12" height="12" rx="2.5" fill="${l.color}"/>`,
-      `<text x="${lx + 16}" y="49.5" font-size="11" fill="${CHART_COLORS.slate}">${esc(l.name)}</text>`
+      text(lx + 16, 49.5, l.name, { size: 11, color: CHART_COLORS.slate })
     )
     lx += 16 + w + 20
   }

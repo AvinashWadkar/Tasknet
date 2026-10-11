@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  outputFileTracingIncludes: {
+    "/api/reports/export": ["./src/lib/fonts/**/*"],
+  },
   reactStrictMode: false,
 };
 
