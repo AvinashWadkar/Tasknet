@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast'
 import { api } from './api'
 import { LoginView } from './login-view'
 import { ForcePasswordModal } from './force-password-modal'
+import { ChangePasswordDialog } from './change-password-dialog'
 import { HomeView } from './home-view'
 import { CalendarView } from './calendar-view'
 import { TeamView } from './team-view'
@@ -52,6 +53,7 @@ import {
   Menu,
   CheckCircle2,
   Sparkles,
+  KeyRound,
 } from 'lucide-react'
 
 type View = 'home' | 'calendar' | 'team' | 'reports' | 'admin'
@@ -67,6 +69,7 @@ export function TaskManagerApp() {
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
   const [navOpen, setNavOpen] = useState(false)
   const [notifGateOpen, setNotifGateOpen] = useState(false)
+  const [changePwOpen, setChangePwOpen] = useState(false)
 
   const loadMe = useCallback(async () => {
     try {
@@ -323,6 +326,10 @@ export function TaskManagerApp() {
                   )}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setChangePwOpen(true)}>
+                  <KeyRound className="mr-2 h-4 w-4" /> Change password
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-red-600 focus:text-red-700">
                   <LogOut className="mr-2 h-4 w-4" /> Logout
                 </DropdownMenuItem>
@@ -427,6 +434,22 @@ export function TaskManagerApp() {
           onChanged={bumpRefresh}
         />
       )}
+
+      {/* Change-password dialog (from the profile menu) */}
+      <ChangePasswordDialog
+        open={changePwOpen}
+        onOpenChange={setChangePwOpen}
+        onDone={() =>
+          toast({
+            title: (
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Password changed
+              </span>
+            ),
+            description: 'Use your new password next time you sign in.',
+          })
+        }
+      />
 
       {/* Mandatory first-login notification gate (rendered behind the password modal) */}
       {notifGateOpen && <NotificationGate open onDone={() => setNotifGateOpen(false)} />}

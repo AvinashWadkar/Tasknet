@@ -421,3 +421,19 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 
 Stage Summary:
 - Both the My Tasks and Team View tabs now have a month dropdown at the top, defaulting to the current month. My Tasks jumps the calendar to the chosen month; Team View scopes every stat, employee row and task to the chosen month, with an "All time" escape hatch.
+
+---
+
+Task ID: 22
+Agent: Z.ai Code (main)
+Task: "Once clicked on profile above logout there should be one option to change password."
+
+Work Log:
+- New src/components/task-manager/change-password-dialog.tsx: reusable, dismissible "Change password" dialog (current + new + confirm, live policy hint, inline error, busy spinner). Posts to the existing POST /api/auth/change-password, which verifies the current password and enforces the policy; resets the form on close/cancel.
+- app.tsx: added a "Change password" DropdownMenuItem (KeyRound icon) in the profile menu, above Logout with a separator; added changePwOpen state and rendered the dialog with a success toast ("Password changed").
+- Reused the existing endpoint as-is — the mandatory first-login ForcePasswordModal is untouched.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311): created a temp user, first login with the default password, changed it via the endpoint (200 ok), logged in with the new password (200), old password rejected (401), temp user deleted. 7/7. Temp files cleaned up.
+
+Stage Summary:
+- The profile menu now offers "Change password" (above Logout), opening a dialog that verifies the current password and sets a new one with the standard policy.
