@@ -364,3 +364,24 @@ Work Log:
 Stage Summary:
 - App fully branded "Tasknet": browser tab title "Tasknet — Team Task Manager", login heading, header brand block, footer "Tasknet — one master task manager for every employee · Built with Z.ai", report exports "Tasknet-Report-*.xlsx"
 - Verified via Agent Browser as Rahul (EMP002): login h1, header, footer text all "Tasknet"; screenshot confirms logo icon intact; API 200s, zero page errors
+
+---
+
+Task ID: 19
+Agent: Z.ai Code (main)
+Task: "When a task is due, send a reminder notification 1 hour before and 15 min before the due time."
+
+Work Log:
+- Schema: added Task.reminder1hSentAt / Task.reminder15mSentAt (nullable DateTime) to prisma/schema.prisma; ran `npx prisma db push --accept-data-loss` (Neon synced, client regenerated).
+- New src/lib/reminders.ts: runDueReminders(now) dispatches the two passes over DISJOINT windows — the 1-hour pass covers dueDate ∈ (now+15m, now+60m], the 15-minute pass covers (now, now+15m] — so the boundary can never double-fire. Each task is claimed atomically with a conditional updateMany (`reminder*SentAt IS NULL`) BEFORE dispatch, so overlapping ticks (or an external cron racing the in-process scheduler) cannot send duplicates. Recipients = the task's assignments whose status ≠ COMPLETED; delivered via notifyAssignees(type 'TASK_REMINDER', titles "Task due in 1 hour" / "Task due in 15 minutes", message names the IST due time); only ACTIVE tasks with dueDate > now.
+- In-process scheduler: new src/instrumentation.ts register() — Node-runtime only, one timer per process (global guard), ticks runDueReminders every 60s (REMINDER_INTERVAL_MS, floored at 30s) after a 10s warm-up; opt-out via REMINDERS_DISABLED=1; logs "[reminders] due-soon scheduler started". Reminders therefore fire with no external cron.
+- Optional external trigger: POST/GET /api/cron/reminders (runtime nodejs) — authorized by x-cron-secret == CRON_SECRET, else an ADMIN session; returns {oneHour, fifteenMin, dispatched}. Use it if the host runs a real cron instead of the built-in timer (set REMINDERS_DISABLED=1 then).
+- Notifications ride the existing pipeline: notifyAssignees writes Notification rows + realtime publish + sendPushToUsers (web-push VAPID / FCM), so the reminder reaches both the bell and the device push with no extra wiring.
+- Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles.
+- Logic test (bun, injected clock, isolated temp user): tasks due 30m / 10m / 15m / 2h plus a completed task due 30m → run1 oneHour=1 & fifteenMin=2 (the exactly-15m task lands in the 15-minute window, not the 1-hour one); 1-hour and 15-minute notifications land on the correct tasks; the 2h task and the completed task get nothing; run2 dispatched=0 (idempotent). 8/8.
+- Live E2E against the standalone server (PORT 3311): scheduler logged start; unauthenticated cron → 401; as admin created a temp employee + a task due in 10 min → trigger returned fifteenMin=1 → the employee's /api/notifications contained the "Task due in 15 minutes" TASK_REMINDER for that task; second trigger dispatched=0. 9/9; server SQL confirmed both window queries. Temp user/task and scratch files cleaned up.
+
+Stage Summary:
+- Assignees now get an automatic reminder 1 hour before and 15 minutes before a task's due time, delivered through the existing notification bell + web-push (VAPID/FCM) pipeline.
+- Runs by itself via the app's in-process scheduler; an /api/cron/reminders endpoint (secret or admin) is available for hosts that prefer an external cron.
+- Duplicate-safe and idempotent: disjoint windows + atomic per-task claim; completed assignees are skipped.

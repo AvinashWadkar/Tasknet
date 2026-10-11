@@ -137,6 +137,12 @@ model Task {
   recurWeekdays   String? // WEEKLY repeat days, comma-separated ISO weekday 1=Mon..7=Sun e.g. "1,3,5"
   recurMonthDay   Int? // MONTHLY day-of-month (1..31, clamped to month length)
 
+  // Due-soon reminders: each threshold fires at most once per task. The
+  // scheduler sets these when it dispatches the "due in 1 hour" / "due in
+  // 15 minutes" push to the still-open assignees.
+  reminder1hSentAt  DateTime?
+  reminder15mSentAt DateTime?
+
   @@index([dueDate])
   @@index([createdById])
   @@index([rootTaskId])
