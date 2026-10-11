@@ -19,7 +19,7 @@ import { api } from './api'
 import { RECUR_FREQS, RECUR_UNIT, recurrenceLabel, type RecurFreq, type RecurEndType } from '@/lib/recurring'
 import { cn } from '@/lib/utils'
 import type { DirectoryUser } from './types'
-import { Loader2, Plus, Search, Users, X, Repeat } from 'lucide-react'
+import { Loader2, Plus, Search, Users, X, Repeat, ShieldCheck } from 'lucide-react'
 
 const WEEKDAY_CHIPS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] // index 0 = ISO 1 (Monday)
 
@@ -52,6 +52,7 @@ export function NewTaskDialog({
   const [recurCount, setRecurCount] = useState(4)
   const [recurDays, setRecurDays] = useState<Set<number>>(new Set())
   const [recurMonthDay, setRecurMonthDay] = useState('')
+  const [validatorId, setValidatorId] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -70,6 +71,7 @@ export function NewTaskDialog({
     setRecurCount(4)
     setRecurDays(new Set())
     setRecurMonthDay('')
+    setValidatorId('')
     setLoadingUsers(true)
     api<{ users: DirectoryUser[] }>('/api/users')
       .then((r) => setUsers(r.users))
@@ -118,6 +120,7 @@ export function NewTaskDialog({
           description: description.trim(),
           dueDate: { date, time },
           assigneeIds: [...selected],
+          validatorId: validatorId || undefined,
           recurring,
           ...(recurring
             ? {
@@ -419,6 +422,30 @@ export function NewTaskDialog({
                 ))
               )}
             </div>
+          </div>
+
+          {/* Optional validator / collation */}
+          <div className="space-y-2">
+            <Label htmlFor="t-validator" className="flex items-center gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-brand-600" /> Validator / collation <span className="text-slate-400">(optional)</span>
+            </Label>
+            <select
+              id="t-validator"
+              value={validatorId}
+              onChange={(e) => setValidatorId(e.target.value)}
+              className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
+            >
+              <option value="">No validator</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.employeeCode}){u.process ? ` · ${u.process}` : ''}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400">
+              If you choose a validator, every assignee must send their completed part to this person, who can approve it
+              or reopen it with a comment.
+            </p>
           </div>
 
           {error && (

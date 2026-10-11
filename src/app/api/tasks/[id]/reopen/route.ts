@@ -79,7 +79,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     await db.$transaction([
       db.taskAssignment.updateMany({
         where: { taskId: task.id, userId: { in: reopenIds }, status: 'COMPLETED' },
-        data: { status: 'PENDING', completedAt: null, note: null },
+        data: {
+          status: 'PENDING',
+          completedAt: null,
+          note: null,
+          validationStatus: 'NOT_REQUIRED',
+          sentForValidationAt: null,
+          validatedAt: null,
+        },
       }),
       db.taskActivity.createMany({ data: logs.map((l) => ({ ...l, taskId: task.id })) }),
     ])

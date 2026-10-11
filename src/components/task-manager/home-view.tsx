@@ -11,7 +11,7 @@ import { TeamScopeToggle } from './team-scope-toggle'
 import { StatListDialog, type StatKey, type StatBucket } from './stat-list-dialog'
 import { greetingForHour, istHour, istToday, fmtDate, fmtISTClock, fmtWeekdayDate } from '@/lib/dates'
 import type { Me, TaskDTO } from './types'
-import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, PartyPopper, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound } from 'lucide-react'
+import { CalendarCheck2, CalendarDays, CheckCircle2, Clock3, ListTodo, PartyPopper, Plus, AlertTriangle, Loader2, Sunrise, SunMedium, MoonStar, UsersRound, ShieldCheck } from 'lucide-react'
 import { initialsOf, viewerStatus } from './shared'
 import { AppDownloadButton } from './app-download-button'
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,7 @@ export function HomeView({
   const [tasks, setTasks] = useState<TaskDTO[] | null>(null)
   const [teamTasks, setTeamTasks] = useState<TaskDTO[] | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [validationTasks, setValidationTasks] = useState<TaskDTO[] | null>(null)
   // Which statistic tile's task list is open (null = closed)
   const [statOpen, setStatOpen] = useState<StatKey | null>(null)
   // Managers (and ADMIN) get the extra "My Team Tasks for Today" list
@@ -59,6 +60,17 @@ export function HomeView({
     api<{ tasks: TaskDTO[] }>(`/api/tasks?scope=all&filter=all`)
       .then((r) => alive && setTasks(r.tasks))
       .catch(() => alive && setTasks([]))
+    return () => {
+      alive = false
+    }
+  }, [refreshKey])
+
+  // Tasks I'm the chosen validator for (fetched for everyone; usually empty)
+  useEffect(() => {
+    let alive = true
+    api<{ tasks: TaskDTO[] }>(`/api/tasks?scope=all&filter=validate`)
+      .then((r) => alive && setValidationTasks(r.tasks))
+      .catch(() => alive && setValidationTasks([]))
     return () => {
       alive = false
     }
@@ -203,7 +215,18 @@ export function HomeView({
     return list
   }, [teamTasks, today])
 
+  // Parts sent to me to validate (only tasks where I'm the validator)
+  const pendingValidation = useMemo(
+    () => (validationTasks || []).filter((t) => t.status !== 'ABORTED' && t.assignments.some((a) => a.validationStatus === 'PENDING')),
+    [validationTasks]
+  )
+
   async function quickStatus(task: TaskDTO, status: 'IN_PROGRESS' | 'COMPLETED') {
+    // Tasks with a validator must be completed via the send-for-validation flow
+    if (status === 'COMPLETED' && task.validator) {
+      onOpenTask(task.id)
+      return
+    }
     setBusyId(task.id)
     try {
       await api(`/api/tasks/${task.id}/status`, { method: 'POST', body: JSON.stringify({ status }) })
@@ -510,6 +533,25 @@ export function HomeView({
 
       {/* Smart priority plan */}
       <SmartPriorityPanel me={me} refreshKey={refreshKey} onOpenTask={onOpenTask} />
+
+      {/* Validation requests — parts sent to me to approve/reopen */}
+      {pendingValidation.length > 0 && (
+        <section aria-label="Tasks sent to you for validation">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" aria-hidden="true" /> Validation requests
+            </h2>
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+              {pendingValidation.length} {pendingValidation.length === 1 ? 'task' : 'tasks'}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {pendingValidation.map((t) => (
+              <TaskCard key={t.id} task={t} me={me} onOpen={() => onOpenTask(t.id)} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Today's tasks — managers get their team's list side-by-side */}
       {showTeamList ? (

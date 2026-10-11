@@ -1,7 +1,7 @@
 'use client'
 
 import { Badge } from '@/components/ui/badge'
-import { Ban } from 'lucide-react'
+import { Ban, ShieldCheck, BadgeCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { STATUS_LABEL, type TaskDTO, type TaskStatus } from './types'
 
@@ -48,6 +48,27 @@ export function AbortedBadge({ className }: { className?: string }) {
       Aborted
     </Badge>
   )
+}
+
+/** Validation state of a part: only rendered when a validator is involved. */
+export function ValidationBadge({ status, className }: { status?: string; className?: string }) {
+  if (status === 'PENDING') {
+    return (
+      <Badge variant="outline" className={cn('gap-1 border-amber-300 bg-amber-100 font-medium text-amber-800', className)}>
+        <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+        Pending validation
+      </Badge>
+    )
+  }
+  if (status === 'VALIDATED') {
+    return (
+      <Badge variant="outline" className={cn('gap-1 border-emerald-300 bg-emerald-100 font-medium text-emerald-800', className)}>
+        <BadgeCheck className="h-3 w-3" aria-hidden="true" />
+        Validated
+      </Badge>
+    )
+  }
+  return null
 }
 
 const AVATAR_COLORS = [

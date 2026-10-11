@@ -1,11 +1,12 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { fmtTime, fmtDate, delayLabel } from '@/lib/dates'
 import { recurrenceLabel } from '@/lib/recurring'
-import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, viewerStatus } from './shared'
+import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge, ValidationBadge, viewerStatus } from './shared'
 import type { Me, TaskDTO } from './types'
-import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat, Play, Check } from 'lucide-react'
+import { CalendarClock, UserRound, AlarmClock, CheckCircle2, Repeat, Play, Check, ShieldCheck } from 'lucide-react'
 
 export function TaskCard({
   task,
@@ -56,6 +57,13 @@ export function TaskCard({
             <>
               <StatusBadge status={viewerStatus(task, me.id)} />
               {overdue && <OverdueBadge />}
+              <ValidationBadge status={mine?.validationStatus} />
+              {!mine && task.validator?.id === me.id && task.assignments.some((a) => a.validationStatus === 'PENDING') && (
+                <Badge variant="outline" className="gap-1 border-emerald-300 bg-emerald-600 font-medium text-white">
+                  <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                  To validate
+                </Badge>
+              )}
             </>
           )}
         </div>

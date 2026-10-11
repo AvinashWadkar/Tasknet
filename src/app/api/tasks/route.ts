@@ -8,6 +8,7 @@ import { recurrenceLabel, parseWeekdays, weekdaysToStr, type RecurFreq, type Rec
 
 const taskInclude = {
   creator: { select: { id: true, name: true, employeeCode: true, designation: true } },
+  validator: { select: { id: true, name: true, employeeCode: true, designation: true } },
   assignments: {
     select: {
       id: true,
@@ -15,6 +16,9 @@ const taskInclude = {
       status: true,
       completedAt: true,
       updatedAt: true,
+      validationStatus: true,
+      sentForValidationAt: true,
+      validatedAt: true,
       user: { select: { id: true, name: true, employeeCode: true, designation: true, process: true } },
     },
   },
@@ -59,12 +63,16 @@ export async function GET(req: NextRequest) {
   const from = sp.get('from')
   const to = sp.get('to')
 
-  // Base visibility: I created it OR I am assigned to it
-  const where: Record<string, unknown> = {
-    OR: [{ createdById: session.id }, { assignments: { some: { userId: session.id } } }],
+  // Base visibility: I created it OR I am assigned to it.
+  // filter=validate → tasks this user is the chosen validator/collator for.
+  let where: Record<string, unknown>
+  if (filter === 'validate') {
+    where = { validatorId: session.id }
+  } else {
+    where = { OR: [{ createdById: session.id }, { assignments: { some: { userId: session.id } } }] }
+    if (filter === 'assigned') where.assignments = { some: { userId: session.id } }
+    if (filter === 'created') where.createdById = session.id
   }
-  if (filter === 'assigned') where.assignments = { some: { userId: session.id } }
-  if (filter === 'created') where.createdById = session.id
 
   if (scope === 'today' && date) {
     const { start, end } = istDayBounds(date)
@@ -100,6 +108,7 @@ export async function POST(req: NextRequest) {
     const description = String(body.description || '').trim() || null
     const dueDateRaw = body.dueDate
     const assigneeIds: string[] = Array.isArray(body.assigneeIds) ? [...new Set(body.assigneeIds)] : []
+    const validatorId = String(body.validatorId || '').trim()
 
     if (!title) return NextResponse.json({ error: 'Task title is required' }, { status: 400 })
     if (!dueDateRaw) return NextResponse.json({ error: 'Due date is required' }, { status: 400 })
@@ -124,6 +133,19 @@ export async function POST(req: NextRequest) {
     })
     if (validUsers.length === 0) {
       return NextResponse.json({ error: 'No valid assignees found' }, { status: 400 })
+    }
+
+    // Optional collation/validator — any active employee. When set, every
+    // assignee must send their completed part here before it counts as done.
+    let validator: { id: string; name: string } | null = null
+    if (validatorId) {
+      validator = await db.user.findFirst({
+        where: { id: validatorId, isActive: true },
+        select: { id: true, name: true },
+      })
+      if (!validator) {
+        return NextResponse.json({ error: 'The selected validator was not found' }, { status: 400 })
+      }
     }
 
     // ── Recurrence (optional) ──────────────────────────────────────
@@ -186,6 +208,14 @@ export async function POST(req: NextRequest) {
         detail: `Assigned to ${validUsers.map((u) => u.name).join(', ')}`,
       },
     ]
+    if (validator) {
+      activitiesData.push({
+        actorId: session.id,
+        actorName: `${session.name} (${session.employeeCode})`,
+        action: 'VALIDATION',
+        detail: `Collation validator: ${validator.name}`,
+      })
+    }
     if (recurring) {
       const endNote =
         recurEndType === 'ON_DATE' && recurEndDate
@@ -207,6 +237,7 @@ export async function POST(req: NextRequest) {
         description,
         dueDate,
         createdById: session.id,
+        validatorId: validator?.id ?? null,
         recurring,
         recurFreq: recurring ? recurFreq : null,
         recurInterval: recurring ? recurInterval : null,
@@ -233,6 +264,17 @@ export async function POST(req: NextRequest) {
       title: 'New task assigned to you',
       message: `${session.name} assigned you "${task.title}" — due ${fmtDate(task.dueDate)}${recurring ? ' (recurring)' : ''}.`,
     })
+
+    if (validator) {
+      await notifyAssignees({
+        taskId: task.id,
+        recipientIds: [validator.id],
+        excludeIds: [session.id],
+        type: 'TASK_VALIDATION',
+        title: 'You were set as a validator',
+        message: `${session.name} chose you to validate "${task.title}". You'll be notified when a part is sent to you.`,
+      })
+    }
 
     publish({ type: 'task', taskId: task.id, action: 'created' })
 

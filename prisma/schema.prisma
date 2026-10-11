@@ -30,6 +30,7 @@ model User {
   managerMappingAsEmployee ManagerMapping[]   @relation("EmployeeMappings")
   managerMappingAsManager  ManagerMapping[]   @relation("ManagerMappings")
   createdTasks             Task[]             @relation("TaskCreator")
+  validatedTasks           Task[]             @relation("TaskValidator")
   assignments              TaskAssignment[]
   activities               TaskActivity[]
   notifications            Notification[]
@@ -111,11 +112,17 @@ model Task {
   abortReason   String?
   createdById   String
   creator       User             @relation("TaskCreator", fields: [createdById], references: [id])
+  // Optional collation/validator: when set, every assignee must send their
+  // completed part to this person, who can approve or reopen it.
+  validatorId   String?
+  validator     User?            @relation("TaskValidator", fields: [validatorId], references: [id], onDelete: SetNull)
   assignments   TaskAssignment[]
   activities    TaskActivity[]
   notifications Notification[]
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+
+  @@index([validatorId])
 
   // Recurring series — the next occurrence is auto-created when every
   // assignee completes this task (aborting ends the series)
@@ -146,6 +153,12 @@ model TaskAssignment {
   status      String    @default("PENDING")
   completedAt DateTime?
   note        String?
+  // Validation/collation state (only meaningful when the task has a validator):
+  // NOT_REQUIRED = no validator on the task; PENDING = sent, awaiting review;
+  // VALIDATED = the validator approved this part.
+  validationStatus    String    @default("NOT_REQUIRED")
+  sentForValidationAt DateTime?
+  validatedAt         DateTime?
   task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   updatedAt   DateTime  @updatedAt
@@ -157,6 +170,7 @@ model TaskAssignment {
 // ─────────────────────────────────────────────────────────────
 // TaskActivity: complete audit trail of a task with timestamps
 // action: TASK_CREATED | ASSIGNED | STATUS_UPDATED | COMMENT | TASK_UPDATED | REOPENED
+//         | VALIDATION | VALIDATION_SENT | VALIDATED
 // ─────────────────────────────────────────────────────────────
 model TaskActivity {
   id        String   @id @default(cuid())

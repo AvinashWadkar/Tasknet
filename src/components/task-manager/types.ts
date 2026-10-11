@@ -1,5 +1,6 @@
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 export type TaskState = 'ACTIVE' | 'ABORTED'
+export type ValidationStatus = 'NOT_REQUIRED' | 'PENDING' | 'VALIDATED'
 
 export interface Me {
   id: string
@@ -31,6 +32,16 @@ export interface TaskAssignmentDTO {
   completedAt: string | null
   updatedAt: string
   user: AssigneeUser
+  validationStatus?: ValidationStatus
+  sentForValidationAt?: string | null
+  validatedAt?: string | null
+}
+
+export interface TaskValidator {
+  id: string
+  name: string
+  employeeCode: string
+  designation: string
 }
 
 export interface TaskDTO {
@@ -43,6 +54,7 @@ export interface TaskDTO {
   abortReason: string | null
   createdAt: string
   creator: { id: string; name: string; employeeCode: string; designation: string }
+  validator?: TaskValidator | null // chosen collation/validator (optional)
   assignments: TaskAssignmentDTO[]
   // Recurring series (optional — absent on non-recurring tasks)
   recurring?: boolean

@@ -26,7 +26,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { useRealtime } from '@/hooks/use-realtime'
 import type { RealtimeEvent } from '@/lib/realtime'
-import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar } from './shared'
+import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar, ValidationBadge } from './shared'
 import { api } from './api'
 import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
 import { fmtDateTime, fmtDate, fmtTime, delayLabel } from '@/lib/dates'
@@ -49,6 +49,9 @@ import {
   AlarmClock,
   Forward,
   Repeat,
+  ShieldCheck,
+  BadgeCheck,
+  Send,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -61,6 +64,9 @@ const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
   TASK_ABORTED: { icon: Ban, cls: 'bg-red-100 text-red-700' },
   TASK_HANDOFF: { icon: Forward, cls: 'bg-cyan-100 text-cyan-700' },
   RECURRENCE: { icon: Repeat, cls: 'bg-emerald-100 text-emerald-700' },
+  VALIDATION: { icon: ShieldCheck, cls: 'bg-emerald-100 text-emerald-700' },
+  VALIDATION_SENT: { icon: Send, cls: 'bg-amber-100 text-amber-700' },
+  VALIDATED: { icon: BadgeCheck, cls: 'bg-emerald-100 text-emerald-700' },
 }
 
 export function TaskDetailDialog({
@@ -77,6 +83,15 @@ export function TaskDetailDialog({
   const [task, setTask] = useState<TaskDetailDTO | null>(null)
   const [canAct, setCanAct] = useState(false)
   const [canReopen, setCanReopen] = useState(false)
+  const [canValidate, setCanValidate] = useState(false)
+  const [sendOpen, setSendOpen] = useState(false)
+  const [sendNote, setSendNote] = useState('')
+  const [sendBusy, setSendBusy] = useState(false)
+  const [reviewBusyId, setReviewBusyId] = useState<string | null>(null)
+  const [reviewReopenOpen, setReviewReopenOpen] = useState(false)
+  const [reviewUser, setReviewUser] = useState<{ userId: string; name: string } | null>(null)
+  const [reviewComment, setReviewComment] = useState('')
+  const [reviewBusy, setReviewBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [statusBusy, setStatusBusy] = useState(false)
   const [comment, setComment] = useState('')
@@ -116,10 +131,11 @@ export function TaskDetailDialog({
     setError(null)
     setTask(null)
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
       setCanReopen(res.canReopen)
+      setCanValidate(res.canValidate)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load task')
@@ -133,10 +149,11 @@ export function TaskDetailDialog({
   const refresh = useCallback(async () => {
     if (!taskId) return
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
       setCanReopen(res.canReopen)
+      setCanValidate(res.canValidate)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch {
       // ignore
@@ -166,6 +183,90 @@ export function TaskDetailDialog({
       setError(err instanceof Error ? err.message : 'Could not update status')
     } finally {
       setStatusBusy(false)
+    }
+  }
+
+  function openSend() {
+    setSendNote('')
+    setSendOpen(true)
+  }
+
+  function chooseStatus(status: TaskStatus) {
+    if (!task) return
+    // A task with a validator can only be completed by sending it for validation.
+    if (status === 'COMPLETED' && task.validator) {
+      setSendNote('')
+      setSendOpen(true)
+      return
+    }
+    setStatus(status)
+  }
+
+  async function doSend() {
+    if (!task) return
+    setSendBusy(true)
+    try {
+      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}/validate`, {
+        method: 'POST',
+        body: JSON.stringify({ note: sendNote.trim() || undefined }),
+      })
+      setTask(res.task)
+      setSendOpen(false)
+      setSendNote('')
+      onChanged()
+      toast({
+        title: 'Sent for validation',
+        description: task.validator ? `${task.validator.name} can now approve or reopen your part.` : undefined,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send for validation')
+    } finally {
+      setSendBusy(false)
+    }
+  }
+
+  async function review(userId: string, action: 'APPROVE' | 'REOPEN', comment?: string) {
+    if (!task) return
+    const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}/validate/review`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, action, comment }),
+    })
+    setTask(res.task)
+    onChanged()
+    return res
+  }
+
+  async function approvePart(userId: string) {
+    setReviewBusyId(userId)
+    try {
+      await review(userId, 'APPROVE')
+      toast({ title: 'Part validated' })
+    } catch (err) {
+      toast({ title: 'Could not validate', description: err instanceof Error ? err.message : 'Please try again.' })
+    } finally {
+      setReviewBusyId(null)
+    }
+  }
+
+  function openReviewReopen(userId: string, name: string) {
+    setReviewUser({ userId, name })
+    setReviewComment('')
+    setReviewReopenOpen(true)
+  }
+
+  async function doReviewReopen() {
+    if (!task || !reviewUser || !reviewComment.trim()) return
+    setReviewBusy(true)
+    try {
+      await review(reviewUser.userId, 'REOPEN', reviewComment.trim())
+      setReviewReopenOpen(false)
+      setReviewComment('')
+      onChanged()
+      toast({ title: 'Part reopened', description: `${reviewUser.name} is back to Pending.` })
+    } catch (err) {
+      toast({ title: 'Could not reopen', description: err instanceof Error ? err.message : 'Please try again.' })
+    } finally {
+      setReviewBusy(false)
     }
   }
 
@@ -300,6 +401,8 @@ export function TaskDetailDialog({
   }
 
   const completedAssignments = task?.assignments.filter((a) => a.status === 'COMPLETED') ?? []
+  const awaitingValidation = task?.assignments.filter((a) => a.validationStatus === 'PENDING') ?? []
+  const validatedCount = task?.assignments.filter((a) => a.validationStatus === 'VALIDATED').length ?? 0
 
   const myAssignment = task?.assignments.find((a) => a.userId === me.id)
   const isOverdue =
@@ -388,6 +491,13 @@ export function TaskDetailDialog({
                       <UserRound className="h-4 w-4 text-brand-600" />
                       Owner: <b className="font-semibold">{task.creator.id === me.id ? 'You' : task.creator.name}</b>
                     </span>
+                    {task.validator && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                        Validator:{' '}
+                        <b className="font-semibold">{task.validator.id === me.id ? 'You' : task.validator.name}</b>
+                      </span>
+                    )}
                     {task.recurring && recurrenceLabel(task) && (
                       <span className="inline-flex flex-wrap items-center gap-1.5">
                         <Repeat className="h-4 w-4 text-brand-600" aria-hidden="true" />
@@ -403,6 +513,65 @@ export function TaskDetailDialog({
                     )}
                   </div>
 
+                  {/* Validator queue — only for the chosen validator */}
+                  {canValidate && !isAborted && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                      <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                        <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                        Validation queue
+                        {awaitingValidation.length > 0 && (
+                          <span className="rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                            {awaitingValidation.length}
+                          </span>
+                        )}
+                      </p>
+                      {awaitingValidation.length === 0 ? (
+                        <p className="text-sm text-emerald-800/80">
+                          No parts awaiting your validation{validatedCount > 0 ? ` — ${validatedCount} already validated.` : '.'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {awaitingValidation.map((a) => (
+                            <div key={a.id} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2.5">
+                              <InitialAvatar name={a.user.name} className="h-8 w-8 text-[10px]" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium text-slate-800">
+                                  {a.user.name} <span className="font-normal text-slate-400">· {a.user.employeeCode}</span>
+                                </p>
+                                <p className="truncate text-xs text-slate-500">
+                                  Sent{a.sentForValidationAt ? ` ${fmtDateTime(a.sentForValidationAt)}` : ''} for validation
+                                </p>
+                              </div>
+                              <Button
+                                size="sm"
+                                className="shrink-0 bg-emerald-600 text-white hover:bg-emerald-700"
+                                disabled={reviewBusyId === a.userId}
+                                onClick={() => approvePart(a.userId)}
+                              >
+                                {reviewBusyId === a.userId ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <BadgeCheck className="mr-1.5 h-3.5 w-3.5" />
+                                )}
+                                Approve
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 border-amber-200 text-amber-700 hover:bg-amber-50"
+                                disabled={reviewBusyId === a.userId}
+                                onClick={() => openReviewReopen(a.userId, a.user.name)}
+                              >
+                                <Rewind className="mr-1.5 h-3.5 w-3.5" />
+                                Reopen
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* My status actions */}
                   {canAct && myAssignment && !isAborted && (
                     <div className="rounded-xl border border-brand-200 bg-brand-50/50 p-3">
@@ -411,8 +580,8 @@ export function TaskDetailDialog({
                         {(['PENDING', 'IN_PROGRESS', 'COMPLETED'] as TaskStatus[]).map((s) => (
                           <button
                             key={s}
-                            disabled={statusBusy || myAssignment.status === s}
-                            onClick={() => setStatus(s)}
+                            disabled={statusBusy || myAssignment.status === s || (s === 'COMPLETED' && myAssignment.validationStatus === 'PENDING')}
+                            onClick={() => chooseStatus(s)}
                             className={cn(
                               'rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-100',
                               myAssignment.status === s
@@ -424,7 +593,11 @@ export function TaskDetailDialog({
                                 : 'border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700'
                             )}
                           >
-                            {statusBusy && myAssignment.status !== s ? '…' : STATUS_LABEL[s]}
+                            {statusBusy && myAssignment.status !== s
+                              ? '…'
+                              : task.validator && s === 'COMPLETED'
+                                ? 'Send for validation'
+                                : STATUS_LABEL[s]}
                           </button>
                         ))}
                         {statusBusy && <Loader2 className="h-4 w-4 animate-spin self-center text-brand-600" />}
@@ -471,7 +644,10 @@ export function TaskDetailDialog({
                               {a.status === 'COMPLETED' && a.completedAt ? ` · closed ${fmtDateTime(a.completedAt)}` : ''}
                             </p>
                           </div>
-                          <StatusBadge status={a.status} />
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <StatusBadge status={a.status} />
+                            <ValidationBadge status={a.validationStatus} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -768,6 +944,95 @@ export function TaskDetailDialog({
                   <Forward className="mr-1.5 h-4 w-4" />
                 )}
                 {handoffBusy ? 'Handing off…' : 'Hand off'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Send my part to the validator (assignee, task has a validator) */}
+      {task && task.validator && (
+        <AlertDialog open={sendOpen} onOpenChange={setSendOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Send your part for validation?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-medium text-slate-700">{task.validator.name}</span> will review your part of
+                &ldquo;{task.title}&rdquo;. They can approve it or reopen it with a comment. You can only complete this task
+                by sending it for validation.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <Label htmlFor="send-note">Note for the validator (optional)</Label>
+              <Textarea
+                id="send-note"
+                placeholder="e.g. Includes the revised sheet — please verify the totals"
+                value={sendNote}
+                onChange={(e) => setSendNote(e.target.value)}
+                rows={3}
+                maxLength={500}
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={sendBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-brand-600 text-white hover:bg-brand-700"
+                disabled={sendBusy}
+                onClick={(e) => {
+                  e.preventDefault()
+                  doSend()
+                }}
+              >
+                {sendBusy ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-4 w-4" />
+                )}
+                {sendBusy ? 'Sending…' : 'Send for validation'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Validator reopens a part (comment required) */}
+      {task && (
+        <AlertDialog open={reviewReopenOpen} onOpenChange={setReviewReopenOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reopen this part?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="font-medium text-slate-700">{reviewUser?.name}</span> will move back to Pending and be
+                notified with your comment.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-1.5">
+              <Label htmlFor="review-comment">Comment (required)</Label>
+              <Textarea
+                id="review-comment"
+                placeholder="e.g. The reconciliation is off — please recheck the entries"
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                rows={3}
+                maxLength={1000}
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={reviewBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-amber-600 text-white hover:bg-amber-700"
+                disabled={reviewBusy || !reviewComment.trim()}
+                onClick={(e) => {
+                  e.preventDefault()
+                  doReviewReopen()
+                }}
+              >
+                {reviewBusy ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Rewind className="mr-1.5 h-4 w-4" />
+                )}
+                {reviewBusy ? 'Reopening…' : 'Reopen part'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

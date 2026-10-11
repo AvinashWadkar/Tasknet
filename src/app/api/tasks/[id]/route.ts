@@ -9,8 +9,8 @@ import { publish } from '@/lib/realtime'
 
 /**
  * GET /api/tasks/[id] — full detail incl. all assignees' statuses + complete history.
- * Visible to: creator, any assignee, or any manager whose downline includes
- * the creator or an assignee. Downline can never view upline's tasks.
+ * Visible to: creator, any assignee, the chosen validator, or any manager whose
+ * downline includes the creator or an assignee. Downline can never view upline.
  */
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
@@ -22,11 +22,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
   const isParticipant = task.createdById === session.id || task.assignments.some((a) => a.userId === session.id)
   const isCreator = task.createdById === session.id
+  const isValidator = task.validatorId === session.id
   let canEdit = isCreator
   let canAct = isParticipant
   let isManager = false
 
-  if (!isParticipant) {
+  if (!isParticipant && !isValidator) {
     const downline = await getDescendantIds(session.id)
     const teamVisible =
       downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
@@ -40,8 +41,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   }
 
   const canReopen = task.status !== 'ABORTED' && (isCreator || isManager)
+  const canValidate = isValidator && task.status !== 'ABORTED'
 
-  return NextResponse.json({ task, canEdit, canAct, canReopen })
+  return NextResponse.json({ task, canEdit, canAct, canReopen, canValidate })
 }
 
 /**

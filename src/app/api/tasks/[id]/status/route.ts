@@ -32,6 +32,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         { status: 400 }
       )
     }
+    // Tasks that have a validator must be completed via send-for-validation.
+    if (status === 'COMPLETED' && task.validatorId) {
+      return NextResponse.json(
+        { error: 'Send your part to the validator to complete this task', requiresValidation: true },
+        { status: 409 }
+      )
+    }
 
     const assignment = task.assignments.find((a) => a.userId === session.id)
     if (!assignment) {
