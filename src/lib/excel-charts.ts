@@ -51,7 +51,7 @@ const esc = (s: string) =>
     .replace(/"/g, '&quot;')
 
 const svgDoc = (w: number, h: number, body: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="${FONT}">` +
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family='${FONT}'>` +
   `<rect width="${w}" height="${h}" fill="#ffffff"/>` +
   body +
   '</svg>'
@@ -122,7 +122,7 @@ function donutSvg(slices: Slice[], title: string): string {
 }
 
 /** Map a value to an SVG point on a line-chart plot area. */
-function useScale(values: number[], w: number, h: number) {
+function makeScale(values: number[], w: number, h: number) {
   const max = Math.max(1, ...values)
   const pad = Math.ceil(max * 0.1)
   const top = max + pad
@@ -152,7 +152,7 @@ function trendSvg(points: MonthPoint[], title: string): string {
   }
 
   const dueMax = Math.max(1, ...points.map((p) => Math.max(p.due, p.completed, p.late)))
-  const yScale = useScale([dueMax * 1.05], ch, ch)
+  const yScale = makeScale([dueMax * 1.05], ch, ch)
   const xStep = cw / Math.max(1, points.length - 1)
 
   const xOf = (i: number) => mL + i * xStep
