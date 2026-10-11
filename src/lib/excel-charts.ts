@@ -627,5 +627,134 @@ export async function buildChartImages(report: {
   return images
 }
 
+/** Bar (new sign-ups) + line (active users) trend used by the usage report. */
+function usageTrendSvg(points: { label: string; newUsers: number; activeUsers: number }[], title: string): string {
+  const W = 620
+  const H = 300
+  const mL = 44
+  const mR = 12
+  const mT = 34
+  const mB = 28
+  const cw = W - mL - mR
+  const ch = H - mT - mB
+
+  const parts: string[] = []
+  parts.push(text(W / 2, 26, title, { size: 15, color: CHART_COLORS.brandDark, anchor: 'middle', bold: true }))
+
+  if (points.length === 0) {
+    parts.push(text(W / 2, H / 2, 'No data', { size: 13, color: CHART_COLORS.slateLight, anchor: 'middle' }))
+    return svgDoc(W, H, parts.join(''))
+  }
+
+  const maxVal = Math.max(1, ...points.flatMap((p) => [p.newUsers, p.activeUsers]))
+  const top = maxVal + Math.ceil(maxVal * 0.1)
+  const yOf = (v: number) => mT + ch - (v / top) * ch
+  const xCenter = (i: number) => mL + (cw / points.length) * (i + 0.5)
+
+  const ticks = 4
+  for (let t = 0; t <= ticks; t++) {
+    const y = mT + (ch / ticks) * t
+    parts.push(
+      `<line x1="${mL}" y1="${y}" x2="${W - mR}" y2="${y}" stroke="${CHART_COLORS.grid}" stroke-width="1"/>`,
+      text(mL - 6, y + 4, Math.round((top * (ticks - t)) / ticks), { size: 10.5, color: CHART_COLORS.slateLight, anchor: 'end' })
+    )
+  }
+  parts.push(
+    `<line x1="${mL}" y1="${mT}" x2="${mL}" y2="${mT + ch}" stroke="${CHART_COLORS.slateLight}" stroke-width="1"/>`,
+    `<line x1="${mL}" y1="${mT + ch}" x2="${W - mR}" y2="${mT + ch}" stroke="${CHART_COLORS.slateLight}" stroke-width="1"/>`
+  )
+
+  const barW = Math.min(46, (cw / points.length) * 0.5)
+  points.forEach((p, i) => {
+    const x = xCenter(i)
+    const h = (p.newUsers / top) * ch
+    parts.push(`<rect x="${x - barW / 2}" y="${mT + ch - h}" width="${barW}" height="${Math.max(1, h)}" rx="3" fill="${CHART_COLORS.brandLight}"/>`)
+    parts.push(text(x, H - 8, p.label, { size: 10, color: CHART_COLORS.slateLight, anchor: 'middle' }))
+  })
+
+  parts.push(`<path d="${points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xCenter(i)} ${yOf(p.activeUsers)}`).join(' ')}" fill="none" stroke="${CHART_COLORS.emerald}" stroke-width="2.8"/>`)
+  points.forEach((p, i) => {
+    parts.push(`<circle cx="${xCenter(i)}" cy="${yOf(p.activeUsers)}" r="3.4" fill="${CHART_COLORS.emerald}"/>`)
+  })
+
+  const legend: [string, string, boolean][] = [
+    ['New sign-ups', CHART_COLORS.brandLight, false],
+    ['Active users', CHART_COLORS.emerald, false],
+  ]
+  let lx = mL
+  for (const [label, color, dashed] of legend) {
+    const labelW = textWidth(label, 11)
+    parts.push(
+      dashed
+        ? `<line x1="${lx}" y1="20" x2="${lx + 18}" y2="20" stroke="${color}" stroke-width="2.6" stroke-dasharray="5 3"/>`
+        : `<rect x="${lx}" y="14" width="14" height="11" rx="2" fill="${color}"/>`,
+      text(lx + 22, 24, label, { size: 11, color: CHART_COLORS.slate })
+    )
+    lx += 22 + labelW + 22
+  }
+
+  return svgDoc(W, H, parts.join(''))
+}
+
+/**
+ * Build chart images for the admin Tool Adoption & Usage export.
+ */
+export async function buildUsageChartImages(usage: {
+  adoptionTrend: { label: string; newUsers: number; activeUsers: number }[]
+  featureUsage: { label: string; count: number }[]
+  byProcess: { process: string; employees: number; adopted: number; active: number }[]
+}): Promise<ChartImage[]> {
+  const images: ChartImage[] = []
+
+  images.push({
+    key: 'usageTrend',
+    title: 'Adoption & activity trend',
+    buffer: await svgToPng(usageTrendSvg(usage.adoptionTrend, 'Adoption & activity — new sign-ups vs active users')),
+    width: 620,
+    height: 300,
+  })
+
+  const featMax = Math.max(1, ...usage.featureUsage.map((f) => f.count))
+  const featRows = usage.featureUsage.map((f) => ({
+    label: f.label,
+    max: featMax,
+    series: [{ name: 'Actions', value: f.count, color: CHART_COLORS.brandMid }],
+  }))
+  images.push({
+    key: 'featureUsage',
+    title: 'Feature usage',
+    buffer: await svgToPng(horizontalStackedBarsSvg(featRows, [{ name: 'Actions', color: CHART_COLORS.brandMid }], 'Feature usage — actions logged')),
+    width: 640,
+    height: 58 + 10 + Math.max(1, featRows.length) * 30,
+  })
+
+  const procRows = usage.byProcess.map((p) => ({
+    label: p.process,
+    max: Math.max(1, p.employees),
+    series: [
+      { name: 'Adopted', value: p.adopted, color: CHART_COLORS.brandMid },
+      { name: 'Active (period)', value: p.active, color: CHART_COLORS.emerald },
+    ],
+  }))
+  images.push({
+    key: 'byProcess',
+    title: 'Usage by process',
+    buffer: await svgToPng(
+      horizontalStackedBarsSvg(
+        procRows,
+        [
+          { name: 'Adopted', color: CHART_COLORS.brandMid },
+          { name: 'Active (period)', color: CHART_COLORS.emerald },
+        ],
+        'Usage by process — adopted vs active employees'
+      )
+    ),
+    width: 640,
+    height: 58 + 10 + Math.max(1, procRows.length) * 30,
+  })
+
+  return images
+}
+
 // Re-export colors for any caller
 export const chartColors = CHART_COLORS

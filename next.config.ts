@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     "/api/reports/export": ["./src/lib/fonts/**/*"],
+    "/api/admin/usage/export": ["./src/lib/fonts/**/*"],
   },
   reactStrictMode: false,
 };

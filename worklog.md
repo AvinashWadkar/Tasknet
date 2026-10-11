@@ -385,3 +385,22 @@ Stage Summary:
 - Assignees now get an automatic reminder 1 hour before and 15 minutes before a task's due time, delivered through the existing notification bell + web-push (VAPID/FCM) pipeline.
 - Runs by itself via the app's in-process scheduler; an /api/cron/reminders endpoint (secret or admin) is available for hosts that prefer an external cron.
 - Duplicate-safe and idempotent: disjoint windows + atomic per-task claim; completed assignees are skipped.
+
+---
+
+Task ID: 20
+Agent: Z.ai Code (main)
+Task: "Add Excel export for the admin Tool Adoption & Usage report."
+
+Work Log:
+- Extracted the report computation into src/lib/usage-report.ts (buildUsageReport(days) → { report, employees }), shared by the JSON endpoint and the new Excel export so they can never drift; normalizeDays() now defaults a missing ?days to 90 (previously an absent param silently fell through to 7). Bonus: computed a full per-employee adoption row (adopted/active/actions/tasksCreated/passwordSet/app/push) for the export.
+- Refactored GET /api/admin/usage to call the shared lib (response shape unchanged; the export-only `employees` array is not sent over JSON).
+- New GET /api/admin/usage/export (runtime nodejs, ADMIN-only): ExcelJS workbook honoring the same ?days window; sheets Summary (KPIs + onboarding funnel + definitions), Snapshots (KPI block + 3 embedded chart PNGs), Adoption Trend, Feature Usage, Usage by Process, Most Active Employees, Employees (full adoption detail with autofilter). Filename Tasknet-Usage-YYYY-MM-DD.xlsx; exposes X-Chart-Count.
+- Charts: added buildUsageChartImages to src/lib/excel-charts.ts (reuses the text-as-paths rasterizer so labels never render as boxes) — new usageTrendSvg (bars = new sign-ups, line = active users) plus the existing horizontal stacked-bar primitive for feature usage and adopted-vs-active by process.
+- next.config.ts outputFileTracingIncludes now traces the bundled font for /api/admin/usage/export too; UI: admin-usage-view.tsx gained an "Export Excel" button (busy spinner + toast) next to the period toggle, passing the selected window.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles and registers the route; font traced into standalone. Live E2E on the standalone server (PORT 3311): admin JSON report intact and no employees leak; unauth → 401, non-admin → 403, admin → 200 with xlsx content-type, filename Tasknet-Usage-2026-10-11.xlsx, X-Chart-Count=3, valid PK zip (69,566 bytes); loaded with ExcelJS → all 7 sheets present and the Snapshots sheet holds 3 images; Summary carries the title + Key metrics. 22/22. Temp employee and scratch files cleaned up.
+
+Stage Summary:
+- Admins can now export the Tool Adoption & Usage report to a styled, charted Excel workbook (Summary · Snapshots · Adoption Trend · Feature Usage · Usage by Process · Most Active Employees · Employees), respecting the 30/90/180-day window selected in the UI.
+- One shared computation powers both the on-screen report and the export.

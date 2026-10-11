@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useToast } from '@/hooks/use-toast'
+import { Button } from '@/components/ui/button'
 import { api } from './api'
 import { InitialAvatar } from './shared'
 import { cn } from '@/lib/utils'
@@ -11,6 +12,7 @@ import {
   Bell,
   CheckCircle2,
   ClipboardList,
+  Download,
   GraduationCap,
   ShieldCheck,
   Smartphone,
@@ -160,6 +162,7 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
   const [days, setDays] = React.useState<Period>(90)
   const [data, setData] = React.useState<UsageResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
+  const [exporting, setExporting] = React.useState(false)
   const reqIdRef = React.useRef(0)
 
   React.useEffect(() => {
@@ -182,6 +185,38 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
   const k = data?.kpis
   const hasData = Boolean(data)
 
+  const exportUsage = async () => {
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/admin/usage/export?days=${days}`, { cache: 'no-store' })
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(j.error || `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Tasknet-Usage-${new Date().toISOString().slice(0, 10)}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast({
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Report exported
+          </span>
+        ),
+        description: 'Adoption & usage Excel file downloaded.',
+      })
+    } catch (e) {
+      toast({ title: 'Export failed', description: e instanceof Error ? e.message : 'Please try again.' })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -198,21 +233,31 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
             </p>
           </div>
         </div>
-        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Report period">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              onClick={() => setDays(p.value)}
-              aria-pressed={days === p.value}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-medium transition',
-                days === p.value ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm" role="group" aria-label="Report period">
+            {PERIODS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setDays(p.value)}
+                aria-pressed={days === p.value}
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-medium transition',
+                  days === p.value ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <Button onClick={exportUsage} disabled={exporting || !hasData} className="shadow-sm">
+            {exporting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
+            ) : (
+              <Download className="h-4 w-4" aria-hidden="true" />
+            )}
+            Export Excel
+          </Button>
         </div>
       </div>
 
