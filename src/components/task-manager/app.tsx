@@ -19,6 +19,7 @@ import { CalendarView } from './calendar-view'
 import { TeamView } from './team-view'
 import { ReportsView } from './reports-view'
 import { AdminPanel } from './admin-panel'
+import { AdminUsageView } from './admin-usage-view'
 import { NotificationBell } from './notification-bell'
 import { AppDownloadButton } from './app-download-button'
 import { NotificationGate } from './notification-gate'
@@ -383,7 +384,7 @@ export function TaskManagerApp() {
             onOpenTask={setDetailTaskId}
           />
         )}
-        {view === 'admin' && me.role === 'ADMIN' && <AdminPanel me={me} refreshKey={refreshKey} />}
+        {view === 'admin' && me.role === 'ADMIN' && <AdminUsageView refreshKey={refreshKey} />}
       </main>
 
       {/* Footer — sticky to bottom via flex column + mt-auto */}
