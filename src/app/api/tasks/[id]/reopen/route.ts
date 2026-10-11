@@ -28,17 +28,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json({ error: 'This task was aborted and can no longer be reopened' }, { status: 400 })
   }
 
-  // Creator, or a manager standing above the creator or an assignee.
+  // Creator, a manager standing above the creator/assignee, or the admin.
+  const isAdmin = session.role === 'ADMIN'
   const isCreator = task.createdById === session.id
   let isManager = false
-  if (!isCreator) {
+  if (!isCreator && !isAdmin) {
     const downline = await getDescendantIds(session.id)
     isManager =
       downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
   }
-  if (!isCreator && !isManager) {
+  if (!isCreator && !isManager && !isAdmin) {
     return NextResponse.json(
-      { error: 'Only the task creator or a manager of the assignees can reopen this task' },
+      { error: 'Only the task creator, a manager of the assignees, or the admin can reopen this task' },
       { status: 403 }
     )
   }

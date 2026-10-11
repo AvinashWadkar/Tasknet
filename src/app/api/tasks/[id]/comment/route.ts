@@ -4,8 +4,8 @@ import { getSessionUser } from '@/lib/auth'
 import { publish } from '@/lib/realtime'
 
 /**
- * POST /api/tasks/[id]/comment — participants (creator or assignees) add a comment
- * that becomes part of the task history.
+ * POST /api/tasks/[id]/comment — participants (creator or assignees) and the
+ * admin add a comment that becomes part of the task history.
  * { text: string }
  */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
     const isParticipant = task.createdById === session.id || task.assignments.some((a) => a.userId === session.id)
-    if (!isParticipant) {
+    if (!isParticipant && session.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Only task participants can comment' }, { status: 403 })
     }
 

@@ -52,6 +52,8 @@ import {
   ShieldCheck,
   BadgeCheck,
   Send,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -82,8 +84,18 @@ export function TaskDetailDialog({
 }) {
   const [task, setTask] = useState<TaskDetailDTO | null>(null)
   const [canAct, setCanAct] = useState(false)
+  const [canEdit, setCanEdit] = useState(false)
   const [canReopen, setCanReopen] = useState(false)
   const [canValidate, setCanValidate] = useState(false)
+  const [canDelete, setCanDelete] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDesc, setEditDesc] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editTime, setEditTime] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteBusy, setDeleteBusy] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
   const [sendNote, setSendNote] = useState('')
   const [sendBusy, setSendBusy] = useState(false)
@@ -131,11 +143,13 @@ export function TaskDetailDialog({
     setError(null)
     setTask(null)
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean; canDelete: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
+      setCanEdit(res.canEdit)
       setCanReopen(res.canReopen)
       setCanValidate(res.canValidate)
+      setCanDelete(res.canDelete)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load task')
@@ -149,11 +163,13 @@ export function TaskDetailDialog({
   const refresh = useCallback(async () => {
     if (!taskId) return
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean; canDelete: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
+      setCanEdit(res.canEdit)
       setCanReopen(res.canReopen)
       setCanValidate(res.canValidate)
+      setCanDelete(res.canDelete)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch {
       // ignore
@@ -397,6 +413,63 @@ export function TaskDetailDialog({
       })
     } finally {
       setReopenBusy(false)
+    }
+  }
+
+  function openEdit() {
+    if (!task) return
+    const d = new Date(task.dueDate)
+    const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(d)
+    const istTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Calcutta',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d)
+    setEditTitle(task.title)
+    setEditDesc(task.description || '')
+    setEditDate(istDate)
+    setEditTime(istTime)
+    setEditOpen(true)
+  }
+
+  async function saveEdit() {
+    if (!task || !editTitle.trim() || !editDate) return
+    setEditBusy(true)
+    try {
+      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          description: editDesc.trim(),
+          dueDate: { date: editDate, time: editTime || '18:00' },
+        }),
+      })
+      setTask(res.task)
+      setEditOpen(false)
+      onChanged()
+      toast({ title: 'Task updated' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update task')
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  async function deleteTask() {
+    if (!task) return
+    setDeleteBusy(true)
+    try {
+      await api(`/api/tasks/${task.id}`, { method: 'DELETE' })
+      setDeleteOpen(false)
+      onChanged()
+      onClose()
+      toast({ title: 'Task deleted', description: 'The task and its history were removed.' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete task')
+      setDeleteOpen(false)
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -652,7 +725,7 @@ export function TaskDetailDialog({
                       ))}
                     </div>
 
-                    {canAct && isCreator && !isAborted && addUsers.length > 0 && (
+                    {canEdit && !isAborted && addUsers.length > 0 && (
                       <div className="mt-2 flex items-center gap-2">
                         <select
                           value={addSel || ''}
@@ -752,7 +825,13 @@ export function TaskDetailDialog({
                     Reopen
                   </Button>
                 )}
-                {isCreator && !isAborted && (
+                {canEdit && !isAborted && (
+                  <Button variant="outline" size="sm" onClick={openEdit}>
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                )}
+                {canEdit && !isAborted && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -761,6 +840,17 @@ export function TaskDetailDialog({
                   >
                     <Ban className="mr-1.5 h-3.5 w-3.5" />
                     Abort Task
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    Delete
                   </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={onClose}>
@@ -1033,6 +1123,81 @@ export function TaskDetailDialog({
                   <Rewind className="mr-1.5 h-4 w-4" />
                 )}
                 {reviewBusy ? 'Reopening…' : 'Reopen part'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Edit task fields (creator or admin) */}
+      {task && (
+        <AlertDialog open={editOpen} onOpenChange={setEditOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Edit task</AlertDialogTitle>
+              <AlertDialogDescription>Update the title, description and due date.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-title">Title</Label>
+                <Input id="edit-title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-desc">Description</Label>
+                <Textarea id="edit-desc" rows={3} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-date">Due date</Label>
+                  <Input id="edit-date" type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-time">Due time (IST)</Label>
+                  <Input id="edit-time" type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                </div>
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={editBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-brand-600 text-white hover:bg-brand-700"
+                disabled={editBusy || !editTitle.trim() || !editDate}
+                onClick={(e) => {
+                  e.preventDefault()
+                  saveEdit()
+                }}
+              >
+                {editBusy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Pencil className="mr-1.5 h-4 w-4" />}
+                {editBusy ? 'Saving…' : 'Save'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {/* Delete task (admin only) */}
+      {task && (
+        <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this task?</AlertDialogTitle>
+              <AlertDialogDescription>
+                &ldquo;{task.title}&rdquo; and all its history will be permanently deleted for everyone. This cannot be
+                undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 text-white hover:bg-red-700"
+                disabled={deleteBusy}
+                onClick={(e) => {
+                  e.preventDefault()
+                  deleteTask()
+                }}
+              >
+                {deleteBusy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1.5 h-4 w-4" />}
+                {deleteBusy ? 'Deleting…' : 'Delete task'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

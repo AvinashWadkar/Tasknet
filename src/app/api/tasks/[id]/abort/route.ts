@@ -5,7 +5,7 @@ import { taskInclude } from '@/lib/task-include'
 import { publish } from '@/lib/realtime'
 
 /**
- * POST /api/tasks/[id]/abort — the task creator aborts (cancels) their task.
+ * POST /api/tasks/[id]/abort — the task creator (or the admin) aborts a task.
  * Body: { reason?: string }  (optional, ≤ 500 chars, recorded in the task history)
  * Aborted tasks are locked: assignees can no longer update their status and the
  * creator can no longer edit the task or add assignees.
@@ -18,8 +18,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const task = await db.task.findUnique({ where: { id }, include: { assignments: true } })
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
-  if (task.createdById !== session.id) {
-    return NextResponse.json({ error: 'Only the task creator can abort this task' }, { status: 403 })
+  const isAdmin = session.role === 'ADMIN'
+  if (task.createdById !== session.id && !isAdmin) {
+    return NextResponse.json({ error: 'Only the task creator or the admin can abort this task' }, { status: 403 })
   }
   if (task.status === 'ABORTED') {
     return NextResponse.json({ error: 'This task has already been aborted' }, { status: 400 })

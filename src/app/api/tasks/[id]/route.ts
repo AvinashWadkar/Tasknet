@@ -20,14 +20,16 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   const task = await db.task.findUnique({ where: { id }, include: taskInclude })
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
+  const isAdmin = session.role === 'ADMIN'
   const isParticipant = task.createdById === session.id || task.assignments.some((a) => a.userId === session.id)
   const isCreator = task.createdById === session.id
   const isValidator = task.validatorId === session.id
-  let canEdit = isCreator
+  // The admin can view and modify any task.
+  let canEdit = isCreator || isAdmin
   let canAct = isParticipant
   let isManager = false
 
-  if (!isParticipant && !isValidator) {
+  if (!isParticipant && !isValidator && !isAdmin) {
     const downline = await getDescendantIds(session.id)
     const teamVisible =
       downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
@@ -40,14 +42,16 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     canAct = false
   }
 
-  const canReopen = task.status !== 'ABORTED' && (isCreator || isManager)
+  const canReopen = task.status !== 'ABORTED' && (isCreator || isManager || isAdmin)
   const canValidate = isValidator && task.status !== 'ABORTED'
+  const canDelete = isAdmin
 
-  return NextResponse.json({ task, canEdit, canAct, canReopen, canValidate })
+  return NextResponse.json({ task, canEdit, canAct, canReopen, canValidate, canDelete })
 }
 
 /**
- * PATCH /api/tasks/[id] — creator only: edit fields and/or add more assignees.
+ * PATCH /api/tasks/[id] — the creator (or the admin on any task): edit fields
+ * and/or add more assignees.
  */
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
@@ -56,8 +60,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const { id } = await ctx.params
   const task = await db.task.findUnique({ where: { id }, include: { assignments: true } })
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
-  if (task.createdById !== session.id) {
-    return NextResponse.json({ error: 'Only the task creator can edit this task' }, { status: 403 })
+
+  const isAdmin = session.role === 'ADMIN'
+  if (task.createdById !== session.id && !isAdmin) {
+    return NextResponse.json({ error: 'Only the task creator or the admin can edit this task' }, { status: 403 })
+  }
+  if (task.status === 'ABORTED' && !isAdmin) {
+    return NextResponse.json({ error: 'This task was aborted and can no longer be edited' }, { status: 400 })
   }
   if (task.status === 'ABORTED') {
     return NextResponse.json(
@@ -133,6 +142,34 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ task: updated })
   } catch (e) {
     console.error('update task error', e)
+    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/tasks/[id] — ADMIN only: permanently delete any task, its
+ * assignments, history and notifications.
+ */
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const session = await getSessionUser()
+  if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  if (session.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Only the administrator can delete a task' }, { status: 403 })
+  }
+
+  const { id } = await ctx.params
+  const task = await db.task.findUnique({ where: { id }, select: { id: true } })
+  if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
+
+  try {
+    await db.$transaction([
+      db.notification.deleteMany({ where: { taskId: id } }),
+      db.task.delete({ where: { id } }),
+    ])
+    publish({ type: 'task', taskId: id, action: 'deleted' })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    console.error('delete task error', e)
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
   }
 }
