@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from './api'
 import { TaskCard } from './task-card'
 import { viewerStatus } from './shared'
+import { MonthFilter } from './month-filter'
 import { projectOccurrences, recurrenceLabel, type ProjectedSlot } from '@/lib/recurring'
 import {
   WEEKDAY_LABELS,
@@ -99,6 +100,13 @@ export function CalendarView({
   const grid = useMemo(() => monthGridDates(monthCursor), [monthCursor])
   const today = istToday()
 
+  // Top month filter: jump the calendar (and agenda) to the picked month
+  function jumpToMonth(m: string) {
+    const first = `${m}-01`
+    setMonthCursor(first)
+    setSelected((prev) => (isSameMonth(prev, first) ? prev : m === today.slice(0, 7) ? today : first))
+  }
+
   const byDay = useMemo(() => {
     const map = new Map<string, TaskDTO[]>()
     for (const t of tasks || []) {
@@ -135,7 +143,8 @@ export function CalendarView({
         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
           <CalendarDays className="h-5 w-5 text-brand-600" /> My Tasks Calendar
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <MonthFilter value={monthCursor.slice(0, 7)} onChange={jumpToMonth} />
           <div className="flex rounded-lg border border-slate-200 bg-white p-0.5" role="tablist" aria-label="Filter tasks">
             {(['all', 'assigned', 'created'] as const).map((f) => (
               <button

@@ -7,9 +7,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { InitialAvatar, StatusBadge, OverdueBadge, AbortedBadge } from './shared'
 import { TeamScopeToggle } from './team-scope-toggle'
 import { TeamStatDialog, type TeamStatKey, type TeamStatBucket } from './team-stat-dialog'
+import { MonthFilter } from './month-filter'
 import { api } from './api'
 import type { Me, TeamData, TeamEmployee, TeamTask, TaskStatus } from './types'
-import { fmtDate, delayLabel } from '@/lib/dates'
+import { fmtDate, delayLabel, istToday, monthLabel } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import {
   Users,
@@ -229,16 +230,17 @@ export function TeamView({
   const [empSearch, setEmpSearch] = useState('')
   const [taskSearch, setTaskSearch] = useState('')
   const [statBucket, setStatBucket] = useState<TeamStatBucket | null>(null)
+  const [month, setMonth] = useState(() => istToday().slice(0, 7))
 
   useEffect(() => {
     let alive = true
-    api<TeamData>('/api/team')
+    api<TeamData>(`/api/team${month ? `?month=${month}` : ''}`)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e instanceof Error ? e.message : 'Could not load team data'))
     return () => {
       alive = false
     }
-  }, [refreshKey, me.id])
+  }, [refreshKey, me.id, month])
 
   const employees = useMemo(() => data?.employees ?? [], [data])
 
@@ -293,9 +295,13 @@ export function TeamView({
           </h2>
           <p className="text-sm text-slate-500">
             Employee-wise status and every task your downline is working on — click any task to see who&apos;s done and who&apos;s pending.
+            <span className="font-medium text-slate-600"> Showing {month ? monthLabel(`${month}-15`) : 'all time'}.</span>
           </p>
         </div>
-        <TeamScopeToggle scope={me.teamScope ?? 'ALL'} onChange={onTeamScopeChange} />
+        <div className="flex flex-wrap items-center gap-2">
+          <MonthFilter value={month} onChange={setMonth} allowAll />
+          <TeamScopeToggle scope={me.teamScope ?? 'ALL'} onChange={onTeamScopeChange} />
+        </div>
       </div>
 
       {error && (

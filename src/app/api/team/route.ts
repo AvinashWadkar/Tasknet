@@ -2,6 +2,8 @@
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { getDescendantIds, getReportingEdges, getManagedEmployeeIds } from '@/lib/hierarchy'
+import { istMonthBounds, istDayBounds } from '@/lib/dates'
+import type { NextRequest } from 'next/server'
 
 interface TreeNode {
   id: string
@@ -18,10 +20,22 @@ interface TreeNode {
  * Downline can never see upline data (tree only grows downward from viewer).
  * Hierarchy comes from ManagerMapping: an employee can report to several
  * managers, and every mapped manager sees/tracks them equally.
+ *
+ * Query: ?month=YYYY-MM (IST) → scope every employee's tasks + stats to that
+ * month (a task counts if it is DUE in the month or the employee COMPLETED it
+ * in the month, mirroring the My Tasks window rule). Omit for all-time.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  const monthParam = req.nextUrl.searchParams.get('month') || ''
+  const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : ''
+  let bounds: { start: Date; end: Date } | null = null
+  if (month) {
+    const { from, to } = istMonthBounds(`${month}-01`)
+    bounds = { start: istDayBounds(from).start, end: istDayBounds(to).end }
+  }
 
   const allUsers = await db.user.findMany({
     where: { isActive: true },
@@ -106,7 +120,17 @@ export async function GET() {
   // All assignments of the visible employees (manager's downline / admin's whole org),
   // with their tasks. The viewer's own tasks are not part of the team view.
   const assignments = await db.taskAssignment.findMany({
-    where: { userId: { in: visibleIds } },
+    where: {
+      userId: { in: visibleIds },
+      ...(bounds
+        ? {
+            OR: [
+              { task: { dueDate: { gte: bounds.start, lte: bounds.end } } },
+              { completedAt: { gte: bounds.start, lte: bounds.end } },
+            ],
+          }
+        : {}),
+    },
     include: {
       task: {
         include: { creator: { select: { id: true, name: true, employeeCode: true } } },

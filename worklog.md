@@ -404,3 +404,20 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 Stage Summary:
 - Admins can now export the Tool Adoption & Usage report to a styled, charted Excel workbook (Summary · Snapshots · Adoption Trend · Feature Usage · Usage by Process · Most Active Employees · Employees), respecting the 30/90/180-day window selected in the UI.
 - One shared computation powers both the on-screen report and the export.
+
+---
+
+Task ID: 21
+Agent: Z.ai Code (main)
+Task: "Under My Tasks and Team View tab, give a month filter at the top."
+
+Work Log:
+- New src/components/task-manager/month-filter.tsx: reusable compact month dropdown (shadcn Select + CalendarRange icon) over a rolling window (12 months ahead back to 24 months behind); always includes the incoming value even if it falls outside the window; optional `allowAll` adds an "All time" option (empty-string key). Omit-friendly `onChange(month: 'YYYY-MM')`.
+- My Tasks (calendar-view.tsx): added the filter at the top of the header (before the status filter pills). Selecting a month jumps the calendar grid to that month (jumpToMonth setMonthCursor to the 1st) and moves the selected-day agenda to today (if in that month) or the 1st; the existing prev/next arrows keep the dropdown in sync since its value is derived from the month cursor.
+- Team View (team-view.tsx): added the filter at the top next to the scope toggle, defaulting to the current month (closest to "give a month filter" ask) with an All-time fallback. The header subtitle now shows the active month. The fetch effect re-queries /api/team?month=YYYY-MM on change, so the stat cards, employee rows (stats) and the flat task list are all month-scoped.
+- Server (src/app/api/team/route.ts): GET now reads ?month=YYYY-MM (validated by regex, else ignored -> all-time). Computes IST month bounds via istMonthBounds() + istDayBounds() and filters the downline's taskAssignments where the task is DUE in the month OR the assignment was COMPLETED in the month, mirroring the My Tasks window rule (applyTaskWindow in /api/tasks). Viewer's own tasks still excluded; employee roster unchanged.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles and registers /api/team. Live E2E on the standalone server (PORT 3311) as admin: unauth -> 401; created a temp task due 2024-02 assigned to a real employee -> present in ?month=2024-02, absent in ?month=2024-03, present all-time and with a bogus ?month (fallback); temp task deleted. 14/14. Temp files cleaned up.
+
+Stage Summary:
+- Both the My Tasks and Team View tabs now have a month dropdown at the top, defaulting to the current month. My Tasks jumps the calendar to the chosen month; Team View scopes every stat, employee row and task to the chosen month, with an "All time" escape hatch.
