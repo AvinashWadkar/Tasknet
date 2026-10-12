@@ -62,6 +62,12 @@ export interface EmployeeUsageRow {
   passwordSet: boolean
   app: boolean
   push: boolean
+  /** When this employee's ID was created (ISO). */
+  createdAt: string
+  /** Per-action counts inside the reporting window (action → count). */
+  actionsByAction: Record<string, number>
+  /** Month keys (YYYY-MM) inside the 6-month trend window with any activity. */
+  activeMonths: string[]
 }
 export interface UsageKpis {
   totalEmployees: number
@@ -172,10 +178,20 @@ export async function buildUsageReport(daysParam?: string | number | null): Prom
     if (idx !== undefined) months[idx].newUsers++
   }
   const activeByMonth = months.map(() => new Set<string>())
+  const activeMonthsByUser = new Map<string, Set<string>>()
   for (const a of trendActivities) {
     if (!a.actorId) continue
-    const idx = monthIndex.get(monthKey(a.createdAt))
-    if (idx !== undefined) activeByMonth[idx].add(a.actorId)
+    const mk = monthKey(a.createdAt)
+    const idx = monthIndex.get(mk)
+    if (idx !== undefined) {
+      activeByMonth[idx].add(a.actorId)
+      let s = activeMonthsByUser.get(a.actorId)
+      if (!s) {
+        s = new Set()
+        activeMonthsByUser.set(a.actorId, s)
+      }
+      s.add(mk)
+    }
   }
   months.forEach((m, i) => (m.activeUsers = activeByMonth[i].size))
 
@@ -208,7 +224,17 @@ export async function buildUsageReport(daysParam?: string | number | null): Prom
 
   // Most active employees (period)
   const perUser = new Map<string, number>()
-  for (const a of periodActivities) if (a.actorId) perUser.set(a.actorId, (perUser.get(a.actorId) ?? 0) + 1)
+  const perUserAction = new Map<string, Map<string, number>>()
+  for (const a of periodActivities) {
+    if (!a.actorId) continue
+    perUser.set(a.actorId, (perUser.get(a.actorId) ?? 0) + 1)
+    let m = perUserAction.get(a.actorId)
+    if (!m) {
+      m = new Map()
+      perUserAction.set(a.actorId, m)
+    }
+    m.set(a.action, (m.get(a.action) ?? 0) + 1)
+  }
   const createdByUser = new Map(taskGroups.map((g) => [g.createdById, g._count._all]))
   const topEmployees: TopEmployeeRow[] = [...perUser.entries()]
     .map(([id, activities]) => {
@@ -235,6 +261,9 @@ export async function buildUsageReport(daysParam?: string | number | null): Prom
       passwordSet: !u.isFirstLogin,
       app: deviceUserIds.has(u.id),
       push: subUserIds.has(u.id),
+      createdAt: u.createdAt.toISOString(),
+      actionsByAction: Object.fromEntries(perUserAction.get(u.id) ?? []),
+      activeMonths: [...(activeMonthsByUser.get(u.id) ?? [])],
     }))
     .sort((a, b) => b.actions - a.actions || a.name.localeCompare(b.name))
 

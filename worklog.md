@@ -437,3 +437,26 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 
 Stage Summary:
 - The profile menu now offers "Change password" (above Logout), opening a dialog that verifies the current password and sets a new one with the standard policy.
+
+---
+
+Task ID: 23
+Agent: Z.ai Code (main)
+Task: "Admin panel - cards on the Tool Adoption & Usage report page (adopted employees, active, etc.) and the other graph details should be clickable; clicking any card or bar shows detailed information."
+
+Work Log:
+- Data: extended EmployeeUsageRow (src/lib/usage-report.ts) with createdAt, actionsByAction (per-action counts in the window) and activeMonths (month keys with activity in the 6-month trend) so the client can build every drill-down. GET /api/admin/usage now returns { ...report, employees } (the same per-employee detail the Excel export already computed). No new endpoint; payload stays small (< a few hundred rows).
+- New src/components/task-manager/usage-drill-dialog.tsx: UsageDrillDialog (generic employee list with avatars, process, tags, a per-row metric, a footer total and an empty-state message) plus EmployeeUsageDialog (single employee: actions/tasks-created stats, adoption flags, and an action breakdown bar list). Both use the shared InitialAvatar and are keyboard/escape dismissible.
+- admin-usage-view.tsx: made every drill target clickable and wired to the dialogs -
+  * all six KPI tiles (Adopted, Active, New employees, Tasks created, Mobile app users, Web push on) now render as accessible buttons;
+  * the adoption trend chart: each "New sign-ups" bar (per-month joiners) and each "Active users" line dot (per-month active) opens the month's employee list;
+  * every onboarding-funnel step (Employees / Password set / App installed / Active) is a button;
+  * every Feature-usage bar lists the employees who logged that action (sorted by their count); system-generated actions with no actor show an explanatory empty state;
+  * each Most-active-employees row opens the per-employee breakdown; each Usage-by-process table row lists that process's employees.
+  Added "click a bar/row for details" hints and cursor styling on the interactive chart bars/dots.
+- Kept the Excel export untouched (it maps explicit columns, so the extra fields are ignored).
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311): unauth 401; admin report 200 with 18 employees each carrying createdAt/actionsByAction/activeMonths; every KPI equals the count of the matching employee drill set; onboarding.active === activeUsers; attributable feature-action total equals the sum of per-employee actions (30 total actions, 25 attributable, 5 system-generated); adoptionTrend and byProcess rows reconcile exactly with the per-employee detail used by the dialogs. 19/19. Note: the admin password had been changed via the new Change-password feature (Admin@2237) and was used for the test. Temp files cleaned up.
+
+Stage Summary:
+- Every metric card, chart bar/dot, funnel step, feature bar, top-employee row and process row on the Tool Adoption & Usage page is now clickable and opens a detail dialog naming the exact employees behind it (with their action counts, adoption flags and a per-employee breakdown).

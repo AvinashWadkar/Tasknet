@@ -16,8 +16,9 @@ export async function GET(req: NextRequest) {
   if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Admins only' }, { status: 403 })
 
   try {
-    const { report } = await buildUsageReport(req.nextUrl.searchParams.get('days'))
-    return NextResponse.json(report)
+    const { report, employees } = await buildUsageReport(req.nextUrl.searchParams.get('days'))
+    // The per-employee detail powers the click-through drill-downs in the UI.
+    return NextResponse.json({ ...report, employees })
   } catch (e) {
     console.error('admin usage report error', e)
     return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
