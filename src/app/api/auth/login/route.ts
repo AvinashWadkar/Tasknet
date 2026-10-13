@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { setSessionCookie } from '@/lib/auth'
+import { isManager } from '@/lib/hierarchy'
+import { resolvePermissions } from '@/lib/permissions'
 
 export async function POST(req: NextRequest) {
   try {
@@ -25,6 +27,7 @@ export async function POST(req: NextRequest) {
       await db.user.update({ where: { id: user.id }, data: { passwordPlain: String(password) } })
     }
     await setSessionCookie(user.id)
+    const manager = await isManager(user.id)
     return NextResponse.json({
       user: {
         id: user.id,
@@ -38,6 +41,8 @@ export async function POST(req: NextRequest) {
         managerName: user.managerName,
         managerEmail: user.managerEmail,
         teamScope: user.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
+        isManager: manager,
+        permissions: resolvePermissions(user.role, manager, user.permissions),
       },
     })
   } catch (e) {

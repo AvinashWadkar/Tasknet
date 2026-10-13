@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { replaceManagerMappings, resolveManagersByEmail } from '@/lib/hierarchy'
 import { ensureProcessExists } from '@/lib/processes'
+import { resolvePermissions } from '@/lib/permissions'
 import { publish } from '@/lib/realtime'
 import { syncUserDetails, UserInputError } from '@/lib/user-sync'
 
@@ -14,8 +15,8 @@ export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  const isAdmin = session.role === 'ADMIN'
-  const includeInactive = isAdmin && new URL(req.url).searchParams.get('includeInactive') === '1'
+  const canManage = session.permissions.manageUsers
+  const includeInactive = canManage && new URL(req.url).searchParams.get('includeInactive') === '1'
 
   const [users, mappings, appDevices] = await Promise.all([
     db.user.findMany({
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
         isFirstLogin: true,
         isActive: true,
         createdAt: true,
+        permissions: true, // admin-granted right overrides (resolved below)
         passwordPlain: true, // ADMIN-only; stripped below for non-admins
       },
     }),
@@ -47,12 +49,12 @@ export async function GET(req: NextRequest) {
       },
     }),
     // Which users have an Android app signed in on a live device (for the admin indicator).
-    isAdmin
+    canManage
       ? db.pushDevice.findMany({ where: { active: true }, select: { userId: true }, distinct: ['userId'] })
       : Promise.resolve([] as { userId: string }[]),
   ])
 
-  if (session.role !== 'ADMIN') {
+  if (!canManage) {
     // Non-admins only need directory basics to assign tasks — never passwords
     return NextResponse.json({
       users: users.map((u) => ({
@@ -79,12 +81,15 @@ export async function GET(req: NextRequest) {
   }
 
   const appUserIds = new Set(appDevices.map((d) => d.userId))
+  const managerIds = new Set(mappings.map((m) => m.manager.id))
 
   // Admin sees every user's current password (plaintext mirror)
   return NextResponse.json({
     users: users.map((u) => ({
       ...u,
       managers: managersByEmployee.get(u.id) || [],
+      isManager: managerIds.has(u.id),
+      permissions: resolvePermissions(u.role, managerIds.has(u.id), u.permissions),
       password: u.passwordPlain ?? null,
       passwordPlain: undefined,
       hasApp: appUserIds.has(u.id),
@@ -92,11 +97,11 @@ export async function GET(req: NextRequest) {
   })
 }
 
-/** POST /api/users — ADMIN only: create a new employee ID. */
+/** POST /api/users — manage-users right: create a new employee ID. */
 export async function POST(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') {
+  if (!session.permissions.manageUsers) {
     return NextResponse.json({ error: 'Only the administrator can create user IDs' }, { status: 403 })
   }
 

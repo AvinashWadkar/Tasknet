@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { isManager } from '@/lib/hierarchy'
+import { resolvePermissions } from '@/lib/permissions'
 import { publish } from '@/lib/realtime'
 
 export async function GET() {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ user: null })
-  return NextResponse.json({ user: { ...user, isManager: await isManager(user.id) } })
+  return NextResponse.json({ user })
 }
 
 export async function PATCH(req: Request) {
@@ -31,6 +32,7 @@ export async function PATCH(req: Request) {
     data: { teamScope },
   })
 
+  const manager = await isManager(updated.id)
   publish({ type: 'users', userId: session.id })
   return NextResponse.json({
     user: {
@@ -45,7 +47,8 @@ export async function PATCH(req: Request) {
       managerName: updated.managerName,
       managerEmail: updated.managerEmail,
       teamScope: updated.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
-      isManager: await isManager(updated.id),
+      isManager: manager,
+      permissions: resolvePermissions(updated.role, manager, updated.permissions),
     },
   })
 }

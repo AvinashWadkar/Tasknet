@@ -16,7 +16,7 @@ import { fmtDateTime, istToday } from '@/lib/dates'
 export async function GET() {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') {
+  if (!session.permissions.manageUsers) {
     return NextResponse.json({ error: 'Only the administrator can download the user dump' }, { status: 403 })
   }
 

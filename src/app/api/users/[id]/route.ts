@@ -1,21 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
+import { isManager } from '@/lib/hierarchy'
 import { publish } from '@/lib/realtime'
 import { ensureProcessExists } from '@/lib/processes'
+import { PERMISSION_META, resolvePermissions, sanitizePermissions } from '@/lib/permissions'
 import { syncUserDetails, UserInputError, type UserDetailInput } from '@/lib/user-sync'
 
 /**
- * PATCH /api/users/[id] — ADMIN only. Update an employee's profile fields, or
- * enable / disable their login with { isActive: boolean }. Body may include:
- * employeeCode, name, email, process, designation, role, managerEmails.
+ * PATCH /api/users/[id] — manage-users right. Update an employee's profile
+ * fields, grant/revoke access rights with { permissions }, or enable / disable
+ * their login with { isActive: boolean }. Body may include: employeeCode, name,
+ * email, process, designation, role, managerEmails, permissions.
  * Uniqueness is enforced excluding the record itself; manager edges are
  * re-resolved from managerEmails. The response lists exactly what changed.
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') {
+  if (!session.permissions.manageUsers) {
     return NextResponse.json({ error: 'Only the administrator can edit users' }, { status: 403 })
   }
 
@@ -58,21 +62,39 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ('employeeCode' in body) input.employeeCode = String(body.employeeCode ?? '')
   if ('name' in body) input.name = String(body.name ?? '')
   if ('email' in body) input.email = String(body.email ?? '')
-  if ('process' in body) input.process = await ensureProcessExists(body.process)
+  if ('process' in body) input.process = String(body.process ?? '')
   if ('designation' in body) input.designation = String(body.designation ?? '')
-  if (typeof body.role === 'string') input.role = body.role
+  if ('role' in body) input.role = String(body.role ?? '')
   if (Array.isArray(body.managerEmails)) {
     input.managerEmails = (body.managerEmails as unknown[])
       .map((e) => String(e || '').trim().toLowerCase())
       .filter(Boolean)
   }
+  const wantsPermissions = 'permissions' in body
 
-  if (Object.keys(input).length === 0) {
+  if (Object.keys(input).length === 0 && !wantsPermissions) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
   try {
+    if (input.process !== undefined) input.process = await ensureProcessExists(input.process)
+
     const { user: updated, changes } = await syncUserDetails(user, input, { actorId: session.id })
+
+    if (wantsPermissions) {
+      const clean = sanitizePermissions(body.permissions)
+      const before = resolvePermissions(user.role, await isManager(id), user.permissions)
+      const saved = await db.user.update({
+        where: { id },
+        data: { permissions: clean === null ? Prisma.DbNull : (clean as Prisma.InputJsonValue) },
+      })
+      const after = resolvePermissions(saved.role, await isManager(id), saved.permissions)
+      const diffs = PERMISSION_META.filter((m) => before[m.key] !== after[m.key]).map(
+        (m) => `${m.label}: ${after[m.key] ? 'On' : 'Off'}`
+      )
+      if (diffs.length > 0) changes.push({ field: 'Access rights', from: '—', to: diffs.join(' · ') })
+    }
+
     publish({ type: 'users', userId: id })
     return NextResponse.json({
       user: {
@@ -111,7 +133,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') {
+  if (!session.permissions.manageUsers) {
     return NextResponse.json({ error: 'Only the administrator can delete users' }, { status: 403 })
   }
 

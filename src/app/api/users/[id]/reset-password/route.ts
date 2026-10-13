@@ -7,14 +7,14 @@ import { publish } from '@/lib/realtime'
 const DEFAULT_PASSWORD = 'Digitide@123'
 
 /**
- * POST /api/users/[id]/reset-password — ADMIN only.
+ * POST /api/users/[id]/reset-password — manage-users right.
  * Resets an employee's password. Body { password } is optional; when omitted the
  * default 'Digitide@123' is used and the mandatory first-login flow is re-triggered.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') {
+  if (!session.permissions.manageUsers) {
     return NextResponse.json({ error: 'Only the administrator can reset passwords' }, { status: 403 })
   }
 

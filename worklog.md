@@ -431,7 +431,7 @@ Task: "Once clicked on profile above logout there should be one option to change
 Work Log:
 - New src/components/task-manager/change-password-dialog.tsx: reusable, dismissible "Change password" dialog (current + new + confirm, live policy hint, inline error, busy spinner). Posts to the existing POST /api/auth/change-password, which verifies the current password and enforces the policy; resets the form on close/cancel.
 - app.tsx: added a "Change password" DropdownMenuItem (KeyRound icon) in the profile menu, above Logout with a separator; added changePwOpen state and rendered the dialog with a success toast ("Password changed").
-- Reused the existing endpoint as-is — the mandatory first-login ForcePasswordModal is untouched.
+- Reused the existing endpoint as-is ï¿½ the mandatory first-login ForcePasswordModal is untouched.
 
 Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311): created a temp user, first login with the default password, changed it via the endpoint (200 ok), logged in with the new password (200), old password rejected (401), temp user deleted. 7/7. Temp files cleaned up.
 
@@ -460,3 +460,43 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 
 Stage Summary:
 - Every metric card, chart bar/dot, funnel step, feature bar, top-employee row and process row on the Tool Adoption & Usage page is now clickable and opens a detail dialog naming the exact employees behind it (with their action counts, adoption flags and a per-employee breakdown).
+
+---
+
+Task ID: 24
+Agent: Z.ai Code (main)
+Task: "When we click on task and it open the task detailed view popup from mobile. below buttons are not adjusting as per screen size and going out of screen."
+
+Work Log:
+- Root cause: the task detail dialog footer (task-detail-dialog.tsx) used a single non-wrapping row - `flex items-center justify-between` holding the "N of M employees completed" label plus a `flex items-center gap-2` row of action buttons (Reopen / Edit / Abort Task / Delete / Close). On narrow screens the button row could not wrap, so it overflowed horizontally past the viewport.
+- Fix: made the footer stack on mobile and lay out as a row from the `sm` breakpoint up - `flex shrink-0 flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between`, and let the button group wrap - `flex flex-wrap items-center gap-2 sm:justify-end` (added `shrink-0` to the check icon). All action buttons now wrap onto multiple lines and stay within the dialog on phones.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles.
+
+Stage Summary:
+- The task detail popup's bottom action buttons now wrap and stay inside the viewport on mobile instead of running off the screen.
+
+---
+
+Task ID: 25
+Agent: Z.ai Code (main)
+Task: "admin should be able to modify rights of any user. these rights edit should be in popup view."
+
+Work Log:
+- Data model: added User.permissions Json? (nullable = no overrides) via `prisma db push` (no migrations folder in this repo). ADMIN role always resolves to full rights so an admin can never lock itself out.
+- New src/lib/permissions.ts: PermissionKey ('createTasks' | 'assignOthers' | 'viewTeam' | 'viewReports' | 'exportData' | 'manageUsers'), PermissionMap, ordered PERMISSION_META (label + description driving the popup), defaultPermissions(role, isManager) (create/assign = everyone; view team/reports/export = managers + ADMIN; manage users = ADMIN), resolvePermissions(role, isManager, raw) (ADMIN = all; otherwise applies only known boolean overrides), and sanitizePermissions(raw) (keeps known booleans, returns null to clear back to defaults).
+- Session: src/lib/auth.ts SessionUser now carries isManager + permissions (computed in getSessionUser); /api/auth/login and /api/auth/me also return them so the client can gate the nav/tabs.
+- Enforcement (server-side, 403):
+  * users routes (/api/users GET+POST, /api/users/[id] PATCH+DELETE, /api/users/bulk, /api/users/export, /api/users/[id]/reset-password) now gate on session.permissions.manageUsers instead of role === 'ADMIN'.
+  * /api/reports + /api/admin/usage -> viewReports; /api/reports/export + /api/admin/usage/export -> exportData; /api/team + /api/team/tasks -> viewTeam.
+  * /api/tasks POST -> createTasks, plus assignOthers when any assignee is not the creator.
+- PATCH /api/users/[id] accepts { permissions } (sanitized; null clears to defaults) alongside the profile fields, and logs an "Access rights" change summary; a permissions-only update is allowed.
+- UI: types.ts Me/DirectoryUser gain permissions/isManager; GET /api/users returns each user's resolved permissions + isManager to admins. app.tsx derives canCreateTasks/canViewTeam/canViewReports/canManageUsers (permission ?? historic role/manager fallback) and uses them for the nav tabs, the New Task buttons and the Home view split; home-view.tsx gates the "My Team Tasks" list on viewTeam.
+- admin-panel.tsx: new "Manage rights" popup (RowActions UserCog button) with a Role selector and a checkbox per PERMISSION_META entry, saving PATCH { role, permissions }. The Role field was removed from the profile "Edit user" dialog so role + rights now live solely in this popup; an ADMIN selection shows a note and saves null overrides.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311): admin list exposes isManager + resolved permissions; a manager's default viewTeam/viewReports true with /api/team and /api/reports 200; admin revoking them makes both 403 (restored afterwards); a non-manager is blocked from team/reports/admin-usage and cannot PATCH users; granting viewReports/exportData to a non-manager opens /api/admin/usage + its Excel export; createTasks=false blocks POST /api/tasks and assignOthers=false blocks assigning others; clearing overrides restores defaults; an empty PATCH is rejected 400. 29/29. Test users left at default rights. Temp files cleaned up.
+
+Stage Summary:
+- Admins can now set per-user access rights from a dedicated "Manage rights" popup on each directory row (role + six capability toggles), and every gated API enforces those rights server-side. Defaults preserve today's behaviour (managers keep team/reports/export, ADMIN keeps everything), so nothing changes until the admin edits someone.
+
+---

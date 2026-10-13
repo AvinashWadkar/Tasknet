@@ -21,6 +21,7 @@ model User {
   passwordPlain            String? // plaintext mirror of password — exposed to ADMIN only (for admin password visibility)
   isFirstLogin             Boolean            @default(true)
   role                     String             @default("EMPLOYEE") // ADMIN | EMPLOYEE
+  permissions              Json? // admin-granted capability overrides; null = role/manager defaults
   managerName              String? // primary L1 manager name (as entered by admin)
   managerEmail             String? // primary L1 manager email (as entered by admin)
   managerId                String? // primary resolved link to manager User (by email match)

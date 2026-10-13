@@ -1,6 +1,8 @@
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db'
+import { isManager as isManagerOf } from '@/lib/hierarchy'
+import { resolvePermissions, type PermissionMap } from '@/lib/permissions'
 
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET || 'digitide-taskflow-secret-key-2024-zai'
@@ -20,6 +22,8 @@ export interface SessionUser {
   managerName: string | null
   managerEmail: string | null
   teamScope: 'ALL' | 'DIRECT'
+  isManager: boolean
+  permissions: PermissionMap
 }
 
 /** Create a signed session token for a user id */
@@ -60,6 +64,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     if (!uid) return null
     const user = await db.user.findUnique({ where: { id: uid } })
     if (!user || !user.isActive) return null
+    const manager = await isManagerOf(user.id)
     return {
       id: user.id,
       employeeCode: user.employeeCode,
@@ -72,6 +77,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       managerName: user.managerName,
       managerEmail: user.managerEmail,
       teamScope: user.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
+      isManager: manager,
+      permissions: resolvePermissions(user.role, manager, user.permissions),
     }
   } catch {
     return null

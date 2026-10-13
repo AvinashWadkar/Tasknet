@@ -13,7 +13,7 @@ import type { NextRequest } from 'next/server'
 export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Admins only' }, { status: 403 })
+  if (!session.permissions.viewReports) return NextResponse.json({ error: 'Admins only' }, { status: 403 })
 
   try {
     const { report, employees } = await buildUsageReport(req.nextUrl.searchParams.get('days'))

@@ -30,6 +30,9 @@ const taskInclude = {
 export async function GET() {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  if (!session.permissions.viewTeam) {
+    return NextResponse.json({ error: 'You do not have permission to view the team' }, { status: 403 })
+  }
 
   let visibleIds: string[]
   if (session.role === 'ADMIN') {

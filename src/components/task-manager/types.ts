@@ -1,3 +1,5 @@
+import type { PermissionMap } from '@/lib/permissions'
+
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 export type TaskState = 'ACTIVE' | 'ABORTED'
 export type ValidationStatus = 'NOT_REQUIRED' | 'PENDING' | 'VALIDATED'
@@ -15,6 +17,7 @@ export interface Me {
   managerEmail: string | null
   teamScope?: 'ALL' | 'DIRECT'
   isManager?: boolean
+  permissions?: PermissionMap
 }
 
 export interface AssigneeUser {
@@ -103,6 +106,8 @@ export interface DirectoryUser {
   createdAt?: string
   hasApp?: boolean // true = signed in on an Android device (live FCM token)
   password?: string | null // ADMIN-only: current password (plaintext mirror)
+  isManager?: boolean // true = has at least one direct report
+  permissions?: PermissionMap // resolved access rights (manage-users only)
 }
 
 export interface TeamTask {

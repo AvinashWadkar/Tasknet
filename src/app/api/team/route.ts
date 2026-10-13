@@ -28,6 +28,9 @@ interface TreeNode {
 export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  if (!session.permissions.viewTeam) {
+    return NextResponse.json({ error: 'You do not have permission to view the team' }, { status: 403 })
+  }
 
   const monthParam = req.nextUrl.searchParams.get('month') || ''
   const month = /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : ''

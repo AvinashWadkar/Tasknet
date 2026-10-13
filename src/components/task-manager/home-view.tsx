@@ -38,7 +38,7 @@ export function HomeView({
   // Which statistic tile's task list is open (null = closed)
   const [statOpen, setStatOpen] = useState<StatKey | null>(null)
   // Managers (and ADMIN) get the extra "My Team Tasks for Today" list
-  const showTeamList = me.isManager === true || me.role === 'ADMIN'
+  const showTeamList = me.permissions?.viewTeam ?? (me.isManager === true || me.role === 'ADMIN')
   const [greeting, setGreeting] = useState('Hello')
   const [today, setToday] = useState(istToday())
   const [clock, setClock] = useState<string | null>(null)

@@ -212,12 +212,17 @@ export function TaskManagerApp() {
     )
   }
 
+  const canViewTeam = me.permissions?.viewTeam ?? Boolean(me.isManager)
+  const canViewReports = me.permissions?.viewReports ?? (Boolean(me.isManager) || me.role === 'ADMIN')
+  const canManageUsers = me.permissions?.manageUsers ?? me.role === 'ADMIN'
+  const canCreateTasks = me.permissions?.createTasks ?? true
+
   const navItems: { key: View; label: string; icon: typeof LayoutDashboard; show: boolean }[] = [
     { key: 'home', label: 'Home', icon: LayoutDashboard, show: true },
     { key: 'calendar', label: 'My Tasks', icon: CalendarDays, show: me.role !== 'ADMIN' },
-    { key: 'team', label: 'Team View', icon: Network, show: Boolean(me.isManager) },
-    { key: 'reports', label: 'Reports', icon: BarChart3, show: Boolean(me.isManager) || me.role === 'ADMIN' },
-    { key: 'admin', label: 'Admin', icon: ShieldCheck, show: me.role === 'ADMIN' },
+    { key: 'team', label: 'Team View', icon: Network, show: canViewTeam },
+    { key: 'reports', label: 'Reports', icon: BarChart3, show: canViewReports },
+    { key: 'admin', label: 'Admin', icon: ShieldCheck, show: canManageUsers },
   ]
 
   return (
@@ -287,7 +292,7 @@ export function TaskManagerApp() {
                 </nav>
 
                 <div className="border-t border-slate-200/70 p-3">
-                  {me.role !== 'ADMIN' && (
+                  {canCreateTasks && me.role !== 'ADMIN' && (
                     <Button className="w-full" size="sm" onClick={() => { setNavOpen(false); openNewTask() }}>
                       <Plus className="mr-1.5 h-4 w-4" /> New Task
                     </Button>
@@ -297,7 +302,7 @@ export function TaskManagerApp() {
               </SheetContent>
             </Sheet>
 
-            {me.role !== 'ADMIN' && (
+            {canCreateTasks && me.role !== 'ADMIN' && (
               <Button size="sm" onClick={() => openNewTask()} className="hidden md:inline-flex">
                 <Plus className="mr-1.5 h-4 w-4" /> New Task
               </Button>
@@ -368,7 +373,7 @@ export function TaskManagerApp() {
 
       {/* Main */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
-        {view === 'home' && me.role !== 'ADMIN' && (
+        {view === 'home' && !canManageUsers && me.role !== 'ADMIN' && (
           <HomeView
             me={me}
             refreshKey={refreshKey}
@@ -378,12 +383,12 @@ export function TaskManagerApp() {
             onTeamScopeChange={setTeamScope}
           />
         )}
-        {view === 'home' && me.role === 'ADMIN' && <AdminPanel me={me} refreshKey={refreshKey} />}
+        {view === 'home' && canManageUsers && <AdminPanel me={me} refreshKey={refreshKey} />}
         {view === 'calendar' && me.role !== 'ADMIN' && (
           <CalendarView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onNewTask={openNewTask} />
         )}
-        {view === 'team' && <TeamView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onTeamScopeChange={setTeamScope} />}
-        {view === 'reports' && (me.isManager || me.role === 'ADMIN') && (
+        {view === 'team' && canViewTeam && <TeamView me={me} refreshKey={refreshKey} onOpenTask={setDetailTaskId} onTeamScopeChange={setTeamScope} />}
+        {view === 'reports' && canViewReports && (
           <ReportsView
             teamScope={me.teamScope ?? 'ALL'}
             onTeamScopeChange={setTeamScope}
@@ -391,7 +396,7 @@ export function TaskManagerApp() {
             onOpenTask={setDetailTaskId}
           />
         )}
-        {view === 'admin' && me.role === 'ADMIN' && <AdminUsageView refreshKey={refreshKey} />}
+        {view === 'admin' && canManageUsers && <AdminUsageView refreshKey={refreshKey} />}
       </main>
 
       {/* Footer — sticky to bottom via flex column + mt-auto */}

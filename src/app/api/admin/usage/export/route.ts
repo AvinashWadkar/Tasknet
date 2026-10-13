@@ -32,7 +32,7 @@ function styleHeaderRow(row: ExcelJS.Row) {
 export async function GET(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') return NextResponse.json({ error: 'Admins only' }, { status: 403 })
+  if (!session.permissions.exportData) return NextResponse.json({ error: 'Admins only' }, { status: 403 })
 
   const { report, employees } = await buildUsageReport(req.nextUrl.searchParams.get('days'))
   const { days, kpis, onboarding, adoptionTrend, featureUsage, byProcess, topEmployees } = report

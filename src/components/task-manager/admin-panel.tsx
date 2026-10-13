@@ -42,11 +42,12 @@ import { SendNotificationDialog } from './send-notification-dialog'
 import { ProcessDuplicateDialog } from './process-duplicate-dialog'
 import type { DirectoryUser, Me } from './types'
 import { fmtDate } from '@/lib/dates'
+import { PERMISSION_META, defaultPermissions, type PermissionKey, type PermissionMap } from '@/lib/permissions'
 import {
   Loader2, UserPlus, Search, ShieldCheck, Users2, KeyRound,
   Eye, EyeOff, Copy, FileUp, Pencil, UserX, UserCheck, Megaphone, FilterX, Filter,
   BellRing, CheckCircle2, AlertTriangle, Globe, Smartphone,
-  Check, ChevronDown, X, Plus, FileDown, Sparkles, ArrowRight, Trash2,
+  Check, ChevronDown, X, Plus, FileDown, Sparkles, ArrowRight, Trash2, UserCog,
 } from 'lucide-react'
 
 type FilterState = Record<string, string[]>
@@ -589,6 +590,7 @@ function RowActions({
   user,
   me,
   onEdit,
+  onRights,
   onDisable,
   onEnable,
   onReset,
@@ -597,6 +599,7 @@ function RowActions({
   user: DirectoryUser
   me: Me
   onEdit: (u: DirectoryUser) => void
+  onRights: (u: DirectoryUser) => void
   onDisable: (u: DirectoryUser) => void
   onEnable: (u: DirectoryUser) => void
   onReset: (u: DirectoryUser) => void
@@ -615,6 +618,17 @@ function RowActions({
         onClick={() => onEdit(user)}
       >
         <Pencil className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-slate-400 hover:bg-brand-50 hover:text-brand-700"
+        aria-label={`Manage rights for ${user.name}`}
+        title="Manage rights"
+        onClick={() => onRights(user)}
+      >
+        <UserCog className="h-3.5 w-3.5" />
       </Button>
       {user.id !== me.id &&
         (active ? (
@@ -697,6 +711,13 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
   const [editManagerIds, setEditManagerIds] = useState<string[]>([])
   const [editError, setEditError] = useState<string | null>(null)
   const [editBusy, setEditBusy] = useState(false)
+
+  // Manage-rights dialog state
+  const [rightsTarget, setRightsTarget] = useState<DirectoryUser | null>(null)
+  const [rightsRole, setRightsRole] = useState('EMPLOYEE')
+  const [rights, setRights] = useState<PermissionMap>(() => defaultPermissions('EMPLOYEE', false))
+  const [rightsError, setRightsError] = useState<string | null>(null)
+  const [rightsBusy, setRightsBusy] = useState(false)
 
   // Disable-login confirmation + new/updated-ID result popups
   const [disableTarget, setDisableTarget] = useState<DirectoryUser | null>(null)
@@ -988,6 +1009,48 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
       setEditError(err instanceof Error ? err.message : 'Could not update user')
     } finally {
       setEditBusy(false)
+    }
+  }
+
+  function openRights(u: DirectoryUser) {
+    const role = u.role || 'EMPLOYEE'
+    setRightsRole(role)
+    setRights(u.permissions ?? defaultPermissions(role, Boolean(u.isManager)))
+    setRightsError(null)
+    setRightsTarget(u)
+  }
+
+  function toggleRight(key: PermissionKey, value: boolean) {
+    setRights((r) => ({ ...r, [key]: value }))
+  }
+
+  async function saveRights(e: React.FormEvent) {
+    e.preventDefault()
+    if (!rightsTarget) return
+    setRightsBusy(true)
+    setRightsError(null)
+    try {
+      await api(`/api/users/${rightsTarget.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          role: rightsRole,
+          permissions: rightsRole === 'ADMIN' ? null : rights,
+        }),
+      })
+      toast({
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <UserCog className="h-4 w-4 text-emerald-500" /> Rights updated
+          </span>
+        ),
+        description: `${rightsTarget.name} (${rightsTarget.employeeCode}) access rights saved.`,
+      })
+      setRightsTarget(null)
+      await loadUsers()
+    } catch (err) {
+      setRightsError(err instanceof Error ? err.message : 'Could not update rights')
+    } finally {
+      setRightsBusy(false)
     }
   }
 
@@ -1330,7 +1393,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                           <p className="break-all text-xs text-slate-500">{u.employeeCode} · {u.email}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
-                          <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} onDelete={askDelete} />
+                          <RowActions user={u} me={me} onEdit={openEdit} onRights={openRights} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} onDelete={askDelete} />
                         </div>
                       </div>
 
@@ -1477,7 +1540,7 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                           </td>
                           <td className="hidden px-3 py-2.5 text-right md:table-cell">
                             <div className="flex items-center justify-end gap-0.5">
-                              <RowActions user={u} me={me} onEdit={openEdit} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} onDelete={askDelete} />
+                              <RowActions user={u} me={me} onEdit={openEdit} onRights={openRights} onDisable={askDisable} onEnable={enableLogin} onReset={openReset} onDelete={askDelete} />
                             </div>
                           </td>
                         </tr>
@@ -1587,20 +1650,6 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
                 />
               </div>
             ))}
-            <div className="space-y-1.5">
-              <Label htmlFor="e-role">Role</Label>
-              <Select value={editForm.role} onValueChange={(v) => setEdit('role', v)}>
-                <SelectTrigger id="e-role" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="EMPLOYEE">Employee</SelectItem>
-                  <SelectItem value="ADMIN" disabled={editTarget?.id === me.id}>
-                    Administrator
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
             <ProcessSelect
               id="e-process"
@@ -1633,6 +1682,91 @@ export function AdminPanel({ me, refreshKey }: { me: Me; refreshKey: number }) {
               <Button type="submit" disabled={editBusy}>
                 {editBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage access-rights popup */}
+      <Dialog open={rightsTarget !== null} onOpenChange={(o) => { if (!o) setRightsTarget(null) }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCog className="h-4 w-4 text-brand-600" />
+              Access rights — {rightsTarget?.name}
+            </DialogTitle>
+            <DialogDescription>
+              <strong>{rightsTarget?.employeeCode}</strong>
+              {rightsTarget?.designation || rightsTarget?.process ? ` · ${rightsTarget.designation || rightsTarget.process}` : ''}.
+              Choose the role and what this person is allowed to do.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={saveRights} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="r-role">Role</Label>
+              <Select value={rightsRole} onValueChange={setRightsRole} disabled={rightsTarget?.id === me.id}>
+                <SelectTrigger id="r-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EMPLOYEE">Employee</SelectItem>
+                  <SelectItem value="ADMIN" disabled={rightsTarget?.id === me.id}>
+                    Administrator
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {rightsRole === 'ADMIN' ? (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Administrators always have every right. Switch the role back to Employee to fine-tune individual
+                permissions.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Permissions</Label>
+                <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200">
+                  {PERMISSION_META.map((p) => (
+                    <label
+                      key={p.key}
+                      htmlFor={`perm-${p.key}`}
+                      className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-slate-50"
+                    >
+                      <Checkbox
+                        id={`perm-${p.key}`}
+                        className="mt-0.5"
+                        checked={rights[p.key] === true}
+                        onCheckedChange={(v) => toggleRight(p.key, v === true)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-slate-800">{p.label}</span>
+                        <span className="block text-xs text-slate-500">{p.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {rightsTarget?.id === me.id && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                This is your own account — you cannot remove your own administrator access.
+              </p>
+            )}
+
+            {rightsError && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{rightsError}</p>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRightsTarget(null)} disabled={rightsBusy}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={rightsBusy}>
+                {rightsBusy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save rights
               </Button>
             </DialogFooter>
           </form>

@@ -34,11 +34,11 @@ function pick(row: Record<string, string>, candidates: string[]) {
   return ''
 }
 
-/** POST /api/users/bulk — ADMIN only: create or update employee IDs from an uploaded Excel/CSV file. */
+/** POST /api/users/bulk — manage-users right: create or update employee IDs from an uploaded Excel/CSV file. */
 export async function POST(req: NextRequest) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  if (session.role !== 'ADMIN') {
+  if (!session.permissions.manageUsers) {
     return NextResponse.json({ error: 'Only the administrator can create user IDs' }, { status: 403 })
   }
 

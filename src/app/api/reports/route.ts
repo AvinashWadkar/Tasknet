@@ -10,6 +10,9 @@ import { buildReport, getReportScope, loadReportRows, parseFilterParams } from '
 export async function GET(req: Request) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  if (!session.permissions.viewReports) {
+    return NextResponse.json({ error: 'You do not have permission to view reports' }, { status: 403 })
+  }
 
   const scope = await getReportScope(session)
   if (!scope || scope.users.length === 0) {

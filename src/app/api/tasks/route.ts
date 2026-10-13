@@ -101,6 +101,9 @@ export async function POST(req: NextRequest) {
   if (session.isFirstLogin) {
     return NextResponse.json({ error: 'Set your password first' }, { status: 403 })
   }
+  if (!session.permissions.createTasks) {
+    return NextResponse.json({ error: 'You do not have permission to create tasks' }, { status: 403 })
+  }
 
   try {
     const body = await req.json()
@@ -114,6 +117,12 @@ export async function POST(req: NextRequest) {
     if (!dueDateRaw) return NextResponse.json({ error: 'Due date is required' }, { status: 400 })
     if (assigneeIds.length === 0) {
       return NextResponse.json({ error: 'Please assign the task to at least one employee' }, { status: 400 })
+    }
+    if (
+      !session.permissions.assignOthers &&
+      assigneeIds.some((aid) => aid !== session.id)
+    ) {
+      return NextResponse.json({ error: 'You do not have permission to assign tasks to other employees' }, { status: 403 })
     }
 
     // dueDate: either an ISO string or {date: 'YYYY-MM-DD', time: 'HH:mm'} in IST
