@@ -808,12 +808,12 @@ export function TaskDetailDialog({
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+            <div className="flex shrink-0 flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 {task.assignments.filter((a) => a.status === 'COMPLETED').length} of {task.assignments.length} employees completed
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 {canReopen && !isAborted && completedAssignments.length > 0 && (
                   <Button
                     variant="outline"
