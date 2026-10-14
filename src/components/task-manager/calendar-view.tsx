@@ -8,7 +8,7 @@ import { api } from './api'
 import { TaskCard } from './task-card'
 import { viewerStatus } from './shared'
 import { MonthFilter } from './month-filter'
-import { projectOccurrences, recurrenceLabel, type ProjectedSlot } from '@/lib/recurring'
+import { projectOccurrences, recurrenceLabel, selectSeriesTips, type ProjectedSlot } from '@/lib/recurring'
 import {
   WEEKDAY_LABELS,
   monthGridDates,
@@ -121,10 +121,14 @@ export function CalendarView({
   // Upcoming occurrences of recurring series, projected per calendar day —
   // each copy only materializes once its predecessor is completed, but the
   // calendar previews the whole schedule ahead of time
+  // Upcoming occurrences of recurring series, projected per calendar day —
+  // each copy only materializes once its predecessor is completed, but the
+  // calendar previews the whole schedule ahead of time. Only the latest
+  // occurrence of each series projects, so a completed predecessor never
+  // re-draws the same future days (e.g. at its old time after an edit).
   const projByDay = useMemo(() => {
     const map = new Map<string, { task: TaskDTO; slot: ProjectedSlot }[]>()
-    for (const t of tasks || []) {
-      if (!t.recurring || !t.recurFreq) continue
+    for (const t of selectSeriesTips(tasks || [])) {
       for (const slot of projectOccurrences(t, grid[0], grid[grid.length - 1], today)) {
         const arr = map.get(slot.day) || []
         arr.push({ task: t, slot })

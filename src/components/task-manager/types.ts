@@ -69,6 +69,7 @@ export interface TaskDTO {
   recurOccurrence?: number
   recurWeekdays?: string | null // WEEKLY repeat days "1,3,5" (1=Mon..7=Sun)
   recurMonthDay?: number | null // MONTHLY day-of-month
+  rootTaskId?: string | null // first occurrence's id — links every copy of a series
 }
 
 export interface ActivityDTO {

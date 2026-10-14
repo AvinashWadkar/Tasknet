@@ -259,3 +259,35 @@ export function projectOccurrences(
   }
   return out
 }
+
+/** Identity of a recurring series: every copy shares its first occurrence's id. */
+export function recurringSeriesKey(t: { id: string; rootTaskId?: string | null }): string {
+  return t.rootTaskId ?? t.id
+}
+
+/**
+ * Keep only the latest occurrence ("the tip") of each recurring series.
+ *
+ * Future copies are previewed by projecting the tip forward. Earlier
+ * occurrences are already history — if they also projected, the same future
+ * days would be drawn twice. That is harmless while every copy shares a time,
+ * but after the admin edits the time of a series (e.g. 6:30 PM → 11 AM) the
+ * completed predecessor keeps projecting the old time and the calendar shows
+ * both 6:30 PM and 11 AM. Selecting the tip avoids the stale duplicates.
+ */
+export function selectSeriesTips<T extends {
+  id: string
+  recurring?: boolean | null
+  recurFreq?: string | null
+  recurOccurrence?: number | null
+  rootTaskId?: string | null
+}>(tasks: T[]): T[] {
+  const tips = new Map<string, T>()
+  for (const t of tasks) {
+    if (!t.recurring || !t.recurFreq) continue
+    const key = recurringSeriesKey(t)
+    const cur = tips.get(key)
+    if (!cur || (t.recurOccurrence ?? 1) > (cur.recurOccurrence ?? 1)) tips.set(key, t)
+  }
+  return [...tips.values()]
+}
