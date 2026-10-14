@@ -577,13 +577,15 @@ export function ReportsView({
                         {r.overdue && <OverdueBadge />}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 sm:px-5">
-                      {r.delayDays > 0 ? (
-                        <span className="font-semibold text-red-600 tabular-nums">{r.delayDays}d</span>
-                      ) : (
-                        <span className="text-slate-300">—</span>
-                      )}
-                    </td>
+                      <td className="px-3 py-2.5 sm:px-5">
+                        {r.delayDays > 0 ? (
+                          <span className="font-semibold text-red-600 tabular-nums">
+                            {r.delayDays}d {r.delayHours}h {r.delayMins}m
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                   </tr>
                 ))}
               </tbody>

@@ -47,6 +47,8 @@ export interface ReportRow {
   overdue: boolean
   onTime: boolean // completed at/before due date
   delayDays: number // completed late → days late; open overdue → days past due; else 0
+  delayHours: number
+  delayMins: number
 }
 
 export interface EmployeeStat {
@@ -220,8 +222,19 @@ export async function loadReportRows(users: ReportUser[]): Promise<ReportRow[]> 
     const onTime = a.status === 'COMPLETED' && a.completedAt !== null && a.completedAt <= a.task.dueDate
     const lateDone = a.status === 'COMPLETED' && a.completedAt !== null && a.completedAt > a.task.dueDate
     let delayDays = 0
-    if (lateDone && a.completedAt) delayDays = Math.ceil((a.completedAt.getTime() - a.task.dueDate.getTime()) / DAY_MS)
-    else if (overdue) delayDays = Math.ceil((now.getTime() - a.task.dueDate.getTime()) / DAY_MS)
+    let delayHours = 0
+    let delayMins = 0
+    if (lateDone && a.completedAt) {
+      const diff = a.completedAt.getTime() - a.task.dueDate.getTime()
+      delayDays = Math.floor(diff / (24 * 3600 * 1000))
+      delayHours = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000))
+      delayMins = Math.floor((diff % (3600 * 1000)) / 60000)
+    } else if (overdue) {
+      const diff = now.getTime() - a.task.dueDate.getTime()
+      delayDays = Math.floor(diff / (24 * 3600 * 1000))
+      delayHours = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000))
+      delayMins = Math.floor((diff % (3600 * 1000)) / 60000)
+    }
     return {
       taskId: a.taskId,
       title: a.task.title,
@@ -242,6 +255,8 @@ export async function loadReportRows(users: ReportUser[]): Promise<ReportRow[]> 
       overdue,
       onTime,
       delayDays,
+      delayHours,
+      delayMins,
     }
   })
   rows.sort((x, y) => y.dueDate.localeCompare(x.dueDate))

@@ -151,9 +151,13 @@ export function delayLabel(due: string | Date, now: Date = new Date()): string {
   if (mins < 1) return 'less than a min'
   if (mins < 60) return `${mins} min${mins === 1 ? '' : 's'}`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'}`
+  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ${mins % 60} min${mins % 60 === 1 ? '' : 's'}`
   const days = Math.floor(hrs / 24)
   const remH = hrs % 24
+  const remM = mins % 60
   const d = `${days} day${days === 1 ? '' : 's'}`
-  return remH > 0 ? `${d} ${remH} hr${remH === 1 ? '' : 's'}` : d
+  let tail = ''
+  if (remH > 0) tail += ` ${remH} hr${remH === 1 ? '' : 's'}`
+  if (remM > 0) tail += ` ${remM} min${remM === 1 ? '' : 's'}`
+  return d + tail
 }
