@@ -62,8 +62,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
   const isAdmin = session.role === 'ADMIN'
+  // Allow creator, admin, or manager to edit
+  const isManager = !isAdmin && task.createdById !== session.id
   if (task.createdById !== session.id && !isAdmin) {
-    return NextResponse.json({ error: 'Only the task creator or the admin can edit this task' }, { status: 403 })
+    // allow if manager of creator or manager of assignee? check hierarchy
+    const { getDescendantIds } = await import('@/lib/hierarchy')
+    const downline = await getDescendantIds(session.id)
+    const isManagerOf = downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
+    if (!isManagerOf) {
+      return NextResponse.json({ error: 'Only the task creator, manager, or admin can edit this task' }, { status: 403 })
+    }
   }
   if (task.status === 'ABORTED' && !isAdmin) {
     return NextResponse.json({ error: 'This task was aborted and can no longer be edited' }, { status: 400 })
@@ -116,6 +124,24 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
             actorName: actor,
             action: 'ASSIGNED',
             detail: `Assigned to ${users.map((u) => u.name).join(', ')}`,
+          })
+        }
+      }
+    }
+
+    const removedIds: string[] = []
+    if (Array.isArray(body.removeAssigneeIds) && body.removeAssigneeIds.length > 0) {
+      const toRemove = [...new Set(body.removeAssigneeIds as string[])].filter((uid) => task.assignments.some((a) => a.userId === uid))
+      if (toRemove.length > 0) {
+        const users = await db.user.findMany({ where: { id: { in: toRemove }, isActive: true }, select: { id: true, name: true } })
+        await db.taskAssignment.deleteMany({ where: { taskId: task.id, userId: { in: toRemove } } })
+        removedIds.push(...toRemove)
+        if (users.length) {
+          logs.push({
+            actorId: session.id,
+            actorName: actor,
+            action: 'UNASSIGNED',
+            detail: `Unassigned from ${users.map((u) => u.name).join(', ')}`,
           })
         }
       }

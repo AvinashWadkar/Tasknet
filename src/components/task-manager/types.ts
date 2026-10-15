@@ -255,6 +255,8 @@ export interface ReportRowDTO {
   overdue: boolean
   onTime: boolean
   delayDays: number
+  delayHours: number
+  delayMins: number
 }
 
 export interface ReportsResponse {
