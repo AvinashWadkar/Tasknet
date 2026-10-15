@@ -535,3 +535,21 @@ Verified: node --check public/sw.js OK; tsc (only the 4 pre-existing errors) + e
 Stage Summary:
 - Tapping a notification now opens the app at the relevant task: browser/web-push notifications are routed by a hardened service worker (absolute URL, any open window, immediate SW activation), and Android app notifications deep-link to /?task=<id> through a native push-action listener.
 
+---
+
+Task ID: 28
+Agent: Z.ai Code (main)
+Task: "Task creator & Manager should have right to exclude particular employee from the already created task (This need to be updated in history)."
+
+Work Log:
+- This capability shipped in commit 2bc51b7 (remove-assignee button in the Assigned-to list + PATCH removeAssigneeIds + UNASSIGNED history entry). This task re-verified it end-to-end and closed one gap.
+- Gap fixed: GET /api/tasks/[id] only granted canEdit to a manager when they were NOT a participant, while PATCH already allowed a manager of the creator/an assignee regardless. Extracted a single managerOfTask() check (downline includes the creator or an assignee) and now set canEdit = creator || admin || managerOfTask for every case, so a manager who is also an assignee sees the same controls the API permits. UI and API can no longer disagree.
+- Live E2E on the standalone server (PORT 3311, real Neon DB, throwaway data cleaned up):
+  * Creator flow 11/11 — admin creates a task with 2 assignees; GET canEdit=true; PATCH removeAssigneeIds leaves 1 assignee; history shows "Unassigned from <name>" (UNASSIGNED); removing the final assignee is rejected 400; delete cleans up.
+  * Manager flow 10/10 — created a throwaway manager + two reports (managerEmails linkage), admin created a task for the two reports; the manager (not a participant) GET canEdit=true, PATCH removed a report 200, history shows UNASSIGNED performed by the manager; a plain non-manager assignee got 403 on PATCH. All throwaway users/task deleted afterwards.
+
+Verified: tsc (only the 4 pre-existing errors); `next build` compiles; both E2E suites pass.
+
+Stage Summary:
+- Confirmed and hardened the feature: a task's creator, any manager over the creator/assignees, and the admin can exclude an employee from an existing (non-aborted) task, the removal is written to the task history, and a task always keeps at least one assignee. Manager edit rights now resolve identically in the API and the UI.
+

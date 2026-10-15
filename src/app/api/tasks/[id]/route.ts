@@ -29,17 +29,26 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   let canAct = isParticipant
   let isManager = false
 
-  if (!isParticipant && !isValidator && !isAdmin) {
+  // A manager (someone whose downline includes the creator or an assignee) may
+  // view and edit any task in their downline — this mirrors the PATCH gate so
+  // the UI and the API always agree, including when the manager is also an
+  // assignee themselves.
+  const managerOfTask = async () => {
     const downline = await getDescendantIds(session.id)
-    const teamVisible =
-      downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
-    if (!teamVisible) {
+    return downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
+  }
+
+  if (!isParticipant && !isValidator && !isAdmin) {
+    if (!(await managerOfTask())) {
       return NextResponse.json({ error: 'You do not have access to this task' }, { status: 403 })
     }
     // Manager viewing a downline task: may edit details and reopen parts.
     isManager = true
     canEdit = true
     canAct = false
+  } else if (!canEdit && (await managerOfTask())) {
+    // Participant manager (e.g. also an assignee) editing downline work.
+    canEdit = true
   }
 
   const canReopen = task.status !== 'ABORTED' && (isCreator || isManager || isAdmin)
