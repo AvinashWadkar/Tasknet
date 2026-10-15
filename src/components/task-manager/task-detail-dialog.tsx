@@ -54,11 +54,13 @@ import {
   Send,
   Pencil,
   Trash2,
+  UserMinus,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
   TASK_CREATED: { icon: Flag, cls: 'bg-brand-100 text-brand-700' },
   ASSIGNED: { icon: Users, cls: 'bg-brand-100 text-brand-700' },
+  UNASSIGNED: { icon: UserMinus, cls: 'bg-red-100 text-red-700' },
   STATUS_UPDATED: { icon: PlayCircle, cls: 'bg-violet-100 text-violet-700' },
   REOPENED: { icon: Rewind, cls: 'bg-amber-100 text-amber-700' },
   COMMENT: { icon: StickyNote, cls: 'bg-slate-100 text-slate-600' },
@@ -88,6 +90,7 @@ export function TaskDetailDialog({
   const [canReopen, setCanReopen] = useState(false)
   const [canValidate, setCanValidate] = useState(false)
   const [canDelete, setCanDelete] = useState(false)
+  const [canAbort, setCanAbort] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
@@ -111,6 +114,7 @@ export function TaskDetailDialog({
   const [addUsers, setAddUsers] = useState<{ id: string; name: string }[]>([])
   const [addSel, setAddSel] = useState<string | null>(null)
   const [addingBusy, setAddingBusy] = useState(false)
+  const [removeBusyId, setRemoveBusyId] = useState<string | null>(null)
   const [abortOpen, setAbortOpen] = useState(false)
   const [abortReason, setAbortReason] = useState('')
   const [abortBusy, setAbortBusy] = useState(false)
@@ -143,13 +147,14 @@ export function TaskDetailDialog({
     setError(null)
     setTask(null)
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean; canDelete: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean; canDelete: boolean; canAbort: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
       setCanEdit(res.canEdit)
       setCanReopen(res.canReopen)
       setCanValidate(res.canValidate)
       setCanDelete(res.canDelete)
+      setCanAbort(res.canAbort)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load task')
@@ -163,13 +168,14 @@ export function TaskDetailDialog({
   const refresh = useCallback(async () => {
     if (!taskId) return
     try {
-      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean; canDelete: boolean }>(`/api/tasks/${taskId}`)
+      const res = await api<{ task: TaskDetailDTO; canEdit: boolean; canAct: boolean; canReopen: boolean; canValidate: boolean; canDelete: boolean; canAbort: boolean }>(`/api/tasks/${taskId}`)
       setTask(res.task)
       setCanAct(res.canAct)
       setCanEdit(res.canEdit)
       setCanReopen(res.canReopen)
       setCanValidate(res.canValidate)
       setCanDelete(res.canDelete)
+      setCanAbort(res.canAbort)
       if (res.canEdit) void loadAddUsers(res.task)
     } catch {
       // ignore
@@ -319,6 +325,26 @@ export function TaskDetailDialog({
       setError(err instanceof Error ? err.message : 'Could not add assignee')
     } finally {
       setAddingBusy(false)
+    }
+  }
+
+  async function removeAssignee(userId: string) {
+    if (!task) return
+    setRemoveBusyId(userId)
+    setError(null)
+    try {
+      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ removeAssigneeIds: [userId] }),
+      })
+      setTask(res.task)
+      void loadAddUsers(res.task)
+      onChanged()
+      toast({ title: 'Employee removed', description: 'They are no longer assigned to this task.' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove assignee')
+    } finally {
+      setRemoveBusyId(null)
     }
   }
 
@@ -721,6 +747,23 @@ export function TaskDetailDialog({
                             <StatusBadge status={a.status} />
                             <ValidationBadge status={a.validationStatus} />
                           </div>
+                          {canEdit && !isAborted && task.assignments.length > 1 && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 shrink-0 p-0 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                              disabled={removeBusyId === a.userId}
+                              onClick={() => removeAssignee(a.userId)}
+                              aria-label={`Remove ${a.user.name}`}
+                              title="Remove from task"
+                            >
+                              {removeBusyId === a.userId ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <UserMinus className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -831,7 +874,7 @@ export function TaskDetailDialog({
                     Edit
                   </Button>
                 )}
-                {canEdit && !isAborted && (
+                {canAbort && !isAborted && (
                   <Button
                     variant="outline"
                     size="sm"

@@ -36,17 +36,18 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     if (!teamVisible) {
       return NextResponse.json({ error: 'You do not have access to this task' }, { status: 403 })
     }
-    // Manager viewing a downline task: read-only, but may reopen parts
+    // Manager viewing a downline task: may edit details and reopen parts.
     isManager = true
-    canEdit = false
+    canEdit = true
     canAct = false
   }
 
   const canReopen = task.status !== 'ABORTED' && (isCreator || isManager || isAdmin)
   const canValidate = isValidator && task.status !== 'ABORTED'
   const canDelete = isAdmin
+  const canAbort = isCreator || isAdmin
 
-  return NextResponse.json({ task, canEdit, canAct, canReopen, canValidate, canDelete })
+  return NextResponse.json({ task, canEdit, canAct, canReopen, canValidate, canDelete, canAbort })
 }
 
 /**
@@ -62,15 +63,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!task) return NextResponse.json({ error: 'Task not found' }, { status: 404 })
 
   const isAdmin = session.role === 'ADMIN'
-  // Allow creator, admin, or manager to edit
-  const isManager = !isAdmin && task.createdById !== session.id
-  if (task.createdById !== session.id && !isAdmin) {
-    // allow if manager of creator or manager of assignee? check hierarchy
-    const { getDescendantIds } = await import('@/lib/hierarchy')
+  const isCreator = task.createdById === session.id
+  // Creator and admin can always edit. Otherwise the actor must be a manager of
+  // the creator or of one of the assignees.
+  if (!isCreator && !isAdmin) {
     const downline = await getDescendantIds(session.id)
     const isManagerOf = downline.includes(task.createdById) || task.assignments.some((a) => downline.includes(a.userId))
     if (!isManagerOf) {
-      return NextResponse.json({ error: 'Only the task creator, manager, or admin can edit this task' }, { status: 403 })
+      return NextResponse.json({ error: 'Only the task creator, a manager, or the admin can edit this task' }, { status: 403 })
     }
   }
   if (task.status === 'ABORTED' && !isAdmin) {
@@ -133,6 +133,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (Array.isArray(body.removeAssigneeIds) && body.removeAssigneeIds.length > 0) {
       const toRemove = [...new Set(body.removeAssigneeIds as string[])].filter((uid) => task.assignments.some((a) => a.userId === uid))
       if (toRemove.length > 0) {
+        const remaining = task.assignments.filter((a) => !toRemove.includes(a.userId)).length
+        if (remaining + addedIds.length < 1) {
+          return NextResponse.json({ error: 'A task must keep at least one assignee.' }, { status: 400 })
+        }
         const users = await db.user.findMany({ where: { id: { in: toRemove }, isActive: true }, select: { id: true, name: true } })
         await db.taskAssignment.deleteMany({ where: { taskId: task.id, userId: { in: toRemove } } })
         removedIds.push(...toRemove)

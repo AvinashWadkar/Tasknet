@@ -500,3 +500,20 @@ Stage Summary:
 - Admins can now set per-user access rights from a dedicated "Manage rights" popup on each directory row (role + six capability toggles), and every gated API enforces those rights server-side. Defaults preserve today's behaviour (managers keep team/reports/export, ADMIN keeps everything), so nothing changes until the admin edits someone.
 
 ---
+
+Task ID: 26
+Agent: Z.ai Code (main)
+Task: "I opened one recurring task and clicked on edit but I am unable to remove 1 employee who was not available today." (plus carry-overs: recurring projections shown twice; reports delay detail.)
+
+Work Log:
+- Recurring duplicate projections: the calendar projected future occurrences from EVERY copy of a recurring series, so a completed predecessor kept showing its old time next to the edited tip. Added recurringSeriesKey(t)=rootTaskId??id and selectSeriesTips() in src/lib/recurring.ts; calendar-view.tsx now projects only the tip of each series. TaskDTO gained rootTaskId.
+- Reports delay detail: ReportRow gained delayHours/delayMins (delayDays now floored from the same diff) for both late-completion and open-overdue rows; reports-view.tsx "Detailed task log" shows "{d}d {h}h {m}m"; delayLabel now includes the minutes remainder.
+- Excluding an assignee: PATCH /api/tasks/[id] now accepts removeAssigneeIds — deletes matching TaskAssignment rows, logs an UNASSIGNED activity ("Unassigned from <names>"), and rejects the change with 400 if it would leave the task with no assignee. The same endpoint now also lets a MANAGER (of the creator or of an assignee) edit the task, not just the creator/admin.
+- Access flags: GET /api/tasks/[id] now returns canEdit=true for a manager viewing a downline task (matching the PATCH gate) plus a new canAbort flag (creator/admin only) so the destructive Abort button stays hidden from managers.
+- UI (task-detail-dialog.tsx): each assignee row in the Assigned-to list gained a "Remove from task" (UserMinus) button, shown when canEdit && !aborted && more than one assignee; removeAssignee() PATCHes { removeAssigneeIds:[id] }, refreshes the task, re-populates the add-employee dropdown and toasts. Added an UNASSIGNED action style to the history timeline. The Abort button is now gated by canAbort.
+
+Verified: tsc (only the 4 pre-existing errors); `next build` compiles.
+
+Stage Summary:
+- A recurring task's schedule no longer shows duplicate future slots, report delays show days/hours/minutes, and a task's creator, admin, or manager can now remove an unavailable employee from any (non-aborted) task while keeping at least one assignee — the removal is recorded in the task history. Aborting stays restricted to the creator/admin.
+
