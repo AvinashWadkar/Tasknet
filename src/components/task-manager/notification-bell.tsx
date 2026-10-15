@@ -16,7 +16,7 @@ import { api } from './api'
 import { useRealtime } from '@/hooks/use-realtime'
 import type { RealtimeEvent } from '@/lib/realtime'
 import { isNativeApp } from '@/lib/native'
-import { subscribeForNativePush, subscribeForPush } from './push-client'
+import { subscribeForNativePush, subscribeForPush, initNativeNotificationTaps } from './push-client'
 import { cn } from '@/lib/utils'
 import { PushTestDialog } from './push-test-dialog'
 import { AlertTriangle, Bell, BellRing, CheckCheck, MessageSquarePlus, Send, Trash2 } from 'lucide-react'
@@ -122,6 +122,8 @@ export function NotificationBell({ onOpenTask, isAdmin }: { onOpenTask: (taskId:
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (!isNativeApp() && !('serviceWorker' in navigator)) return
+    // Route a tapped native notification to its task (also covers cold starts).
+    void initNativeNotificationTaps()
     const trySubscribe = () => {
       // Inside the APK there is no Notification/PushManager API — FCM owns permission
       // and registration there, so ask it directly instead of gating on the browser API.

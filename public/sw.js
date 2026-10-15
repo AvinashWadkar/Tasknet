@@ -1,4 +1,14 @@
 /* Tasknet push notification service worker */
+// Take over as soon as a new version is deployed (this SW caches no assets, so
+// there is nothing to invalidate) — otherwise an updated click handler would
+// not apply until every tab has been closed.
+self.addEventListener('install', () => {
+  self.skipWaiting()
+})
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim())
+})
+
 self.addEventListener('push', (event) => {
   if (!event.data) return
   let payload = {}
@@ -23,22 +33,50 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const data = event.notification.data || {}
   const taskId = data.taskId || null
-  const target = taskId ? `/?task=${encodeURIComponent(taskId)}` : '/'
+  // Always resolve to an absolute same-origin URL so focus/navigate/openWindow
+  // behave identically on every browser (relative URLs are unreliable here).
+  const target = new URL(
+    taskId ? `/?task=${encodeURIComponent(taskId)}` : data.url || '/',
+    self.location.origin
+  )
+  const targetHref = target.href
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      const targetPath = new URL(target, self.location.origin).pathname
-      for (const client of windowClients) {
-        const clientPath = new URL(client.url).pathname
-        if (clientPath === targetPath && 'focus' in client) {
-          client.focus()
-          if ('navigate' in client) return client.navigate(target).catch(() => undefined)
-          return undefined
+    (async () => {
+      const windowClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
+      // Prefer a window already showing the app (same path), then any other.
+      const samePath = windowClients.filter((c) => {
+        try {
+          return new URL(c.url).pathname === target.pathname
+        } catch {
+          return false
+        }
+      })
+      const ordered = [...samePath, ...windowClients.filter((c) => !samePath.includes(c))]
+
+      for (const client of ordered) {
+        try {
+          if ('focus' in client) await client.focus()
+        } catch {
+          /* focus can reject on some platforms — keep going */
+        }
+        try {
+          if ('navigate' in client) {
+            await client.navigate(targetHref)
+            return
+          }
+        } catch {
+          /* fall through to the next client / openWindow */
         }
       }
-      if (clients.openWindow) return clients.openWindow(target)
-      return undefined
-    })
+      if (clients.openWindow) {
+        try {
+          await clients.openWindow(targetHref)
+        } catch {
+          /* nothing else we can do */
+        }
+      }
+    })()
   )
 })
 

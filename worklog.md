@@ -517,3 +517,21 @@ Verified: tsc (only the 4 pre-existing errors); `next build` compiles.
 Stage Summary:
 - A recurring task's schedule no longer shows duplicate future slots, report delays show days/hours/minutes, and a task's creator, admin, or manager can now remove an unavailable employee from any (non-aborted) task while keeping at least one assignee — the removal is recorded in the task history. Aborting stays restricted to the creator/admin.
 
+---
+
+Task ID: 27
+Agent: Z.ai Code (main)
+Task: "Once clicked on popup notification it should take to the app."
+
+Work Log:
+- Root cause / gap: web-push notifications already carried a taskId and the service worker already handled notificationclick, but the handler only focused a window whose pathname exactly matched '/', used a relative URL for focus/navigate/openWindow, and did not guard a rejected client.focus() — any of which could leave a tap doing nothing on some browsers. The Android APK opened on tap but never deep-linked to the specific task.
+- public/sw.js: rewrote notificationclick to resolve an absolute same-origin URL (/?task=<id>, falling back to data.url or '/'), prefer windows already on the app path then any window, focus + navigate each candidate with per-step try/catch so a rejected focus() can't abort navigation, and finally openWindow. Added install→skipWaiting() and activate→clients.claim() so an updated click handler applies right after deploy (this SW caches no assets).
+- src/components/task-manager/push-client.ts: new initNativeNotificationTaps() — inside the Capacitor shell it registers PushNotifications.addListener('pushNotificationActionPerformed') and, on tap, rewrites the current URL to /?task=<id> (covers both warm taps and cold starts from a notification). Idempotent via a module flag; no-op and resettable if the plugin is unavailable.
+- src/components/task-manager/notification-bell.tsx: calls initNativeNotificationTaps() on mount alongside the existing service-worker/push subscription effect.
+- app.tsx already opens the task from ?task=<id> (and strips the param), so both the web SW navigation and the native rewrite land on the task dialog; unauthenticated taps keep the param until login sets `me`, then it opens.
+
+Verified: node --check public/sw.js OK; tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles.
+
+Stage Summary:
+- Tapping a notification now opens the app at the relevant task: browser/web-push notifications are routed by a hardened service worker (absolute URL, any open window, immediate SW activation), and Android app notifications deep-link to /?task=<id> through a native push-action listener.
+

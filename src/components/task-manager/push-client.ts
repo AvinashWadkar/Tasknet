@@ -7,6 +7,7 @@ export const VAPID_PUBLIC_KEY =
   'BKhIUG2m1B-QieBdWUOHq3do4yOsFrfkMuwXL9U3DNYQQcCV55zSNTWuu7yY88th98DoG9jpNji_uGGeXhha7oI'
 
 const NATIVE_TOKEN_KEY = 'tasknet_fcm_token'
+let nativeTapBound = false
 
 export function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -82,6 +83,30 @@ export async function subscribeForNativePush(): Promise<boolean> {
   } catch {
     // Missing google-services.json, no Play Services, or permission denied.
     return false
+  }
+}
+
+/**
+ * Deep-link a tapped native (FCM) notification to the matching task. The Android
+ * shell already opens the app on tap; this routes it to /?task=<id> so the task
+ * dialog opens. Also fires when the app is cold-started from a notification,
+ * which is why it is registered as early as possible. Safe to call repeatedly.
+ */
+export async function initNativeNotificationTaps(): Promise<void> {
+  if (!isNativeApp() || nativeTapBound) return
+  nativeTapBound = true
+  try {
+    const { PushNotifications } = await import('@capacitor/push-notifications')
+    await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+      const data = (action?.notification?.data || {}) as Record<string, unknown>
+      const taskId = (data.taskId || data.task_id) as string | undefined
+      if (!taskId) return
+      const url = new URL(window.location.href)
+      url.searchParams.set('task', taskId)
+      window.location.assign(url.toString())
+    })
+  } catch {
+    nativeTapBound = false
   }
 }
 
