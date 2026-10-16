@@ -665,4 +665,20 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 Stage Summary:
 - The admin panel now shows the Android app version (e.g. `v1.2`) in small font next to the Android symbol on each user who has the app installed, sourced from the version the app reports when it registers for push (requires a one-time APK rebuild that includes `@capacitor/app`).
 
+---
+
+Task ID: 36
+Agent: Z.ai Code (main)
+Task: "Build and publish the Android APK (the one-time rebuild needed to activate the app-version reporting from Task 35)."
+
+Work Log:
+- Bumped the native app version in `android/app/build.gradle`: versionCode 3 → 4, versionName "1.2" → "1.3" (versionCode must keep increasing or Android refuses the upgrade), and updated the web-side `APP_VERSION` in `src/lib/native.ts` so the site's download button points at `/download/Tasknet-v1.3.apk`.
+- Ran `.zscripts\build-apk.ps1` (the documented release pipeline): it sets JAVA_HOME to the Android Studio JBR (21), points Gradle at the SDK, regenerates + verifies the launcher/notification icons, clears `public\download` so installers are not bundled into the APK, runs `npx cap sync android`, builds the signed release APK via `gradlew assembleRelease`, and publishes to `android-app\Tasknet-v1.3.apk` + `android-app\latest.json` (no BOM). The build machine now had the Android SDK at `%LOCALAPPDATA%\Android\Sdk`, the JDK at Android Studio's JBR, and `android\keystore.properties`/the `.p12` keystore present, so no Android Studio UI was needed.
+- Updated `android-app\README.md` to list v1.3 as the current release and fix the stale v1.0 download examples.
+
+Verified: Gradle reported BUILD SUCCESSFUL; `aapt dump badging` on the APK shows `versionCode='4' versionName='1.3'` for `com.avinash.tasknet`; the bundled `assets/capacitor.plugins.json` lists `@capacitor/app` (`com.capacitorjs.plugins.app.AppPlugin`) alongside push-notifications and splash-screen; `classes.dex` contains the `AppPlugin` class; and `assets/capacitor.config.json` still points the WebView at the live site. `android-app/latest.json` now reports version 1.3 / versionCode 4 with the v1.3 URL and size, and the same files are mirrored to `public\download\` (as the Docker build does). The `android/` tree and `public/download/` are git-ignored; the committed artifacts are `android-app/Tasknet-v1.3.apk`, `android-app/latest.json` and `android-app/README.md`.
+
+Stage Summary:
+- Tasknet v1.3 APK (versionCode 4) is built and published. Installed v1.2 devices will be prompted to update on next launch, and once on v1.3 the app reports its version to the server so the admin panel shows `v1.3` next to the Android icon.
+
 
