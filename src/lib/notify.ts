@@ -15,6 +15,8 @@ export async function notifyAssignees(input: {
   type?: string
   title: string
   message: string
+  /** Buzz: deliver the OS push with a strong vibration pattern. */
+  highVibration?: boolean
 }) {
   const recipients = [...new Set(input.recipientIds)].filter(
     (id) => !(input.excludeIds ?? []).includes(id)
@@ -40,5 +42,6 @@ export async function notifyAssignees(input: {
     title: input.title,
     body: input.message.slice(0, 400),
     taskId: input.taskId,
+    highVibration: input.highVibration,
   })
 }

@@ -601,3 +601,20 @@ Verified: tsc (only the 4 pre-existing errors); `next build` compiles. Behavior 
 Stage Summary:
 - Tapping a Tasknet notification on the Android app now opens the app (previously the custom click_action matched no activity and the tap did nothing), and it deep-links to the task via the Capacitor tap listener.
 
+---
+
+Task ID: 32
+Agent: Z.ai Code (main)
+Task: "Managers and creators should be able to edit each and every detail of the task (currently only title, description and due date/time)."
+
+Work Log:
+- Server (PATCH /api/tasks/[id]): beyond title/description/due date + assignee add/remove, the endpoint now also edits the optional validator/collation (set, change or clear — `validatorId`, validated against active users, with a VALIDATION history entry and a "You were set as a validator" notification to the newly chosen person) and the whole recurrence schedule (turn the series on/off or change freq/interval/weekday list/month-day/end type/date/count, validated exactly like task creation, with a RECURRENCE history entry). When `applyTo:'future'` is used on a recurring task, the edited validator and recurrence config now propagate to every later occurrence in the series alongside the title/description/due-date shift.
+- UI: extracted the recurrence editor into a shared controlled component `recurrence-fields.tsx` (RecurrenceFields + RecurrenceValue + recurrencePayload helpers), used by both the create and edit dialogs so there is one implementation. New `edit-task-dialog.tsx` replaces the old three-field quick-edit: it edits title, description, due date & time, assignees (searchable multi-select that adds/removes on save), the collation validator and the full recurrence schedule, and keeps the "this task only / this and all future tasks" chooser for recurring tasks. The task detail dialog's Edit button now opens this dialog and its old inline AlertDialog edit form was removed.
+- The create dialog (new-task-dialog.tsx) was refactored onto the same RecurrenceFields component (unchanged behavior/payload).
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311, real Neon DB): as admin, edited a recurring task's title, description, due date, swapped an assignee, set a validator and changed the recurrence to "every 2 days, 3 times" in one PATCH — every field was persisted and the history recorded TASK_UPDATED/ASSIGNED/UNASSIGNED/VALIDATION/RECURRENCE entries; clearing the validator nulled it; turning recurrence off cleared the recur fields; an invalid occurrence count was rejected 400. 22/22. A second run created a recurring task assigned to the admin, completed occurrence #1 to spawn #2, then edited #1 with `applyTo:'future'` and confirmed #2 received the propagated title, validator and WEEKLY recurrence (with the "match an earlier occurrence" log). 13/13. All throwaway tasks deleted and temp files/processes cleaned up.
+
+Stage Summary:
+- The task creator, a manager of anyone on the task, and the admin can now edit every detail of a task — title, description, due date & time, assignees, the collation validator and the full recurrence schedule — from a single Edit dialog, with every change written to the task history and, for recurring series, optionally applied to this and all future occurrences.
+
+

@@ -28,6 +28,7 @@ import { useRealtime } from '@/hooks/use-realtime'
 import type { RealtimeEvent } from '@/lib/realtime'
 import { StatusBadge, OverdueBadge, AbortedBadge, InitialAvatar, ValidationBadge } from './shared'
 import { api } from './api'
+import { EditTaskDialog } from './edit-task-dialog'
 import { STATUS_LABEL, type Me, type TaskDetailDTO, type TaskStatus } from './types'
 import { fmtDateTime, fmtDate, fmtTime, delayLabel } from '@/lib/dates'
 import { recurrenceLabel } from '@/lib/recurring'
@@ -56,6 +57,7 @@ import {
   Trash2,
   UserMinus,
   AtSign,
+  BellRing,
   X,
 } from 'lucide-react'
 
@@ -94,12 +96,6 @@ export function TaskDetailDialog({
   const [canDelete, setCanDelete] = useState(false)
   const [canAbort, setCanAbort] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
-  const [editTitle, setEditTitle] = useState('')
-  const [editDesc, setEditDesc] = useState('')
-  const [editDate, setEditDate] = useState('')
-  const [editTime, setEditTime] = useState('')
-  const [editBusy, setEditBusy] = useState(false)
-  const [editScope, setEditScope] = useState<'single' | 'future'>('single')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
@@ -118,6 +114,7 @@ export function TaskDetailDialog({
   const [addSel, setAddSel] = useState<string | null>(null)
   const [addingBusy, setAddingBusy] = useState(false)
   const [removeBusyId, setRemoveBusyId] = useState<string | null>(null)
+  const [buzzBusyId, setBuzzBusyId] = useState<string | null>(null)
   const [mentionUsers, setMentionUsers] = useState<{ id: string; name: string; employeeCode: string }[]>([])
   const [mentionIds, setMentionIds] = useState<string[]>([])
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -394,6 +391,22 @@ export function TaskDetailDialog({
     }
   }
 
+  async function buzzUser(userId: string, name: string) {
+    if (!task) return
+    setBuzzBusyId(userId)
+    try {
+      const res = await api<{ ok: boolean; buzzed: { id: string; name: string } }>(`/api/tasks/${task.id}/buzz`, {
+        method: 'POST',
+        body: JSON.stringify({ userId }),
+      })
+      toast({ title: `Buzzed ${res.buzzed?.name || name}`, description: 'They got a notification with a strong vibration.' })
+    } catch (err) {
+      toast({ title: 'Could not buzz', description: err instanceof Error ? err.message : 'Please try again.' })
+    } finally {
+      setBuzzBusyId(null)
+    }
+  }
+
   async function abortTask() {
     if (!task) return
     setAbortBusy(true)
@@ -490,50 +503,7 @@ export function TaskDetailDialog({
 
   function openEdit() {
     if (!task) return
-    const d = new Date(task.dueDate)
-    const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Calcutta' }).format(d)
-    const istTime = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Calcutta',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(d)
-    setEditTitle(task.title)
-    setEditDesc(task.description || '')
-    setEditDate(istDate)
-    setEditTime(istTime)
-    setEditScope('single')
     setEditOpen(true)
-  }
-
-  async function saveEdit() {
-    if (!task || !editTitle.trim() || !editDate) return
-    setEditBusy(true)
-    try {
-      const res = await api<{ task: TaskDetailDTO }>(`/api/tasks/${task.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          title: editTitle.trim(),
-          description: editDesc.trim(),
-          dueDate: { date: editDate, time: editTime || '18:00' },
-          ...(task.recurring && task.recurFreq ? { applyTo: editScope } : {}),
-        }),
-      })
-      setTask(res.task)
-      setEditOpen(false)
-      onChanged()
-      toast({
-        title: 'Task updated',
-        description:
-          task.recurring && task.recurFreq && editScope === 'future'
-            ? 'Changes applied to this and all future occurrences.'
-            : undefined,
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update task')
-    } finally {
-      setEditBusy(false)
-    }
   }
 
   async function deleteTask() {
@@ -811,6 +781,23 @@ export function TaskDetailDialog({
                             <StatusBadge status={a.status} />
                             <ValidationBadge status={a.validationStatus} />
                           </div>
+                          {(canEdit || canValidate) && !isAborted && a.userId !== me.id && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 shrink-0 p-0 text-slate-400 hover:bg-amber-50 hover:text-amber-600"
+                              disabled={buzzBusyId === a.userId}
+                              onClick={() => buzzUser(a.userId, a.user.name)}
+                              aria-label={`Buzz ${a.user.name}`}
+                              title="Buzz — send them a notification with a strong vibration"
+                            >
+                              {buzzBusyId === a.userId ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <BellRing className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
                           {canEdit && !isAborted && task.assignments.length > 1 && (
                             <Button
                               size="sm"
@@ -1286,88 +1273,18 @@ export function TaskDetailDialog({
         </AlertDialog>
       )}
 
-      {/* Edit task fields (creator or admin) */}
+      {/* Edit task — every detail (creator, manager or admin) */}
       {task && (
-        <AlertDialog open={editOpen} onOpenChange={setEditOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Edit task</AlertDialogTitle>
-              <AlertDialogDescription>Update the title, description and due date.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-title">Title</Label>
-                <Input id="edit-title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-desc">Description</Label>
-                <Textarea id="edit-desc" rows={3} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-date">Due date</Label>
-                  <Input id="edit-date" type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-time">Due time (IST)</Label>
-                  <Input id="edit-time" type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
-                </div>
-              </div>
-              {task.recurring && task.recurFreq && (
-                <div className="space-y-2 rounded-lg border border-brand-100 bg-brand-50/50 p-3">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700">
-                    <Repeat className="h-3.5 w-3.5" /> This is a recurring task
-                  </p>
-                  <p className="text-xs text-slate-500">Where should these changes apply?</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      aria-pressed={editScope === 'single'}
-                      onClick={() => setEditScope('single')}
-                      className={cn(
-                        'rounded-lg border p-2.5 text-left transition',
-                        editScope === 'single'
-                          ? 'border-brand-500 bg-white ring-1 ring-brand-500'
-                          : 'border-slate-200 bg-white hover:border-brand-300'
-                      )}
-                    >
-                      <span className="block text-sm font-medium text-slate-800">This task only</span>
-                      <span className="mt-0.5 block text-xs text-slate-500">Just the current occurrence</span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={editScope === 'future'}
-                      onClick={() => setEditScope('future')}
-                      className={cn(
-                        'rounded-lg border p-2.5 text-left transition',
-                        editScope === 'future'
-                          ? 'border-brand-500 bg-white ring-1 ring-brand-500'
-                          : 'border-slate-200 bg-white hover:border-brand-300'
-                      )}
-                    >
-                      <span className="block text-sm font-medium text-slate-800">This and all future tasks</span>
-                      <span className="mt-0.5 block text-xs text-slate-500">Update every upcoming occurrence</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={editBusy}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-brand-600 text-white hover:bg-brand-700"
-                disabled={editBusy || !editTitle.trim() || !editDate}
-                onClick={(e) => {
-                  e.preventDefault()
-                  saveEdit()
-                }}
-              >
-                {editBusy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Pencil className="mr-1.5 h-4 w-4" />}
-                {editBusy ? 'Saving…' : 'Save'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <EditTaskDialog
+          open={editOpen}
+          task={task}
+          me={me}
+          onClose={() => setEditOpen(false)}
+          onSaved={(t) => {
+            setTask(t)
+            onChanged()
+          }}
+        />
       )}
 
       {/* Delete task (admin only) */}

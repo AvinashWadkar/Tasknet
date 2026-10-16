@@ -27,6 +27,8 @@ export type PushPayload = {
   body: string
   taskId?: string | null
   tag?: string
+  /** Buzz: strong vibration + persistent notification on the receiving device. */
+  highVibration?: boolean
 }
 
 /** Result of a best-effort push dispatch campaign. */
@@ -88,7 +90,7 @@ export async function sendPushToUsers(
   if (deviceRows.length > 0) {
     const sent = await sendFcmToTokens(
       deviceRows.map((d) => d.token),
-      { title: payload.title, body: payload.body, taskId: payload.taskId, tag: payload.tag }
+      { title: payload.title, body: payload.body, taskId: payload.taskId, tag: payload.tag, highVibration: payload.highVibration }
     )
     result.devices = deviceRows.length
     result.dispatched += sent.dispatched
@@ -111,6 +113,7 @@ export async function sendPushToUsers(
     body: payload.body,
     taskId: payload.taskId ?? null,
     tag: payload.tag || `tasknet-${Date.now()}`,
+    highVibration: !!payload.highVibration,
   })
 
   let failures = 0

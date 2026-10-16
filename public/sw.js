@@ -26,6 +26,14 @@ self.addEventListener('push', (event) => {
     renotify: true,
     data: { url: payload.url || '/', taskId: payload.taskId || null },
   }
+  // A "buzz" wants the phone to really get noticed: a long, repeating vibration
+  // pattern (Chrome on Android honors `vibrate`) and a notification that stays
+  // on screen until the user deals with it.
+  if (payload.highVibration) {
+    options.vibrate = [0, 600, 250, 600, 250, 600, 250, 600]
+    options.requireInteraction = true
+    options.renotify = true
+  }
   event.waitUntil(self.registration.showNotification(title, options))
 })
 

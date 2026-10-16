@@ -174,6 +174,8 @@ export type FcmPayload = {
   body: string
   taskId?: string | null
   tag?: string
+  /** Buzz: deliver with a strong, attention-grabbing vibration pattern. */
+  highVibration?: boolean
 }
 
 export type FcmResult = {
@@ -218,6 +220,16 @@ export async function sendFcmToTokens(tokens: string[], payload: FcmPayload): Pr
         notification: {
           channelId: 'tasknet-default',
           tag: data.tag,
+          // A "buzz" requests a long, repeating vibration. FCM's own vibrate
+          // timings are honored where the channel does not override them, and
+          // the app's channel already has vibration enabled, so a buzz lands
+          // noticeably harder than a routine task notification.
+          ...(payload.highVibration
+            ? {
+                defaultVibrateTimings: false,
+                vibrateTimingsMillis: [0, 600, 250, 600, 250, 600, 250, 600],
+              }
+            : {}),
           // No custom click_action: FCM would launch an implicit intent for that
           // action, which no activity in the app declares, so tapping the
           // notification would do nothing. Leaving it unset makes FCM use the
