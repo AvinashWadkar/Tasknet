@@ -233,10 +233,11 @@ model PushDevice {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  platform  String   @default("android")
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  token      String   @unique
+  platform   String   @default("android")
+  appVersion String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])

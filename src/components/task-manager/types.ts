@@ -106,6 +106,7 @@ export interface DirectoryUser {
   isFirstLogin?: boolean
   createdAt?: string
   hasApp?: boolean // true = signed in on an Android device (live FCM token)
+  appVersion?: string | null // native APK version reported by the signed-in device
   password?: string | null // ADMIN-only: current password (plaintext mirror)
   isManager?: boolean // true = has at least one direct report
   permissions?: PermissionMap // resolved access rights (manage-users only)

@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  let body: { token?: unknown; platform?: unknown }
+  let body: { token?: unknown; platform?: unknown; appVersion?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -23,13 +23,14 @@ export async function POST(req: Request) {
   const token = typeof body.token === 'string' ? body.token.trim() : ''
   if (!token) return NextResponse.json({ error: 'token is required' }, { status: 400 })
   const platform = typeof body.platform === 'string' ? body.platform.slice(0, 20) : 'android'
+  const appVersion = typeof body.appVersion === 'string' ? body.appVersion.trim().slice(0, 20) || null : null
 
   // Tokens are unique per install, but the same user may re-register after a token
   // rotation — upsert on token so we never create duplicates or orphans.
   await db.pushDevice.upsert({
     where: { token },
-    create: { token, userId: session.id, platform, active: true },
-    update: { userId: session.id, platform, active: true },
+    create: { token, userId: session.id, platform, appVersion, active: true },
+    update: { userId: session.id, platform, appVersion, active: true },
   })
 
   const devices = await db.pushDevice.count({ where: { userId: session.id, active: true } })

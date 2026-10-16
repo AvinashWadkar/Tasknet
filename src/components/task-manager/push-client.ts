@@ -9,6 +9,18 @@ export const VAPID_PUBLIC_KEY =
 const NATIVE_TOKEN_KEY = 'tasknet_fcm_token'
 let nativeTapBound = false
 
+/** Native APK version (versionName), or null in a plain browser / older build. */
+export async function getNativeAppVersion(): Promise<string | null> {
+  if (!isNativeApp()) return null
+  try {
+    const { App } = await import('@capacitor/app')
+    const info = await App.getInfo()
+    return info?.version ? String(info.version) : null
+  } catch {
+    return null
+  }
+}
+
 export function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
@@ -75,9 +87,11 @@ export async function subscribeForNativePush(): Promise<boolean> {
       // private mode etc. — not fatal
     }
 
+    const appVersion = await getNativeAppVersion()
+
     await api('/api/push/devices', {
       method: 'POST',
-      body: JSON.stringify({ token, platform: 'android' }),
+      body: JSON.stringify({ token, platform: 'android', appVersion }),
     })
     return true
   } catch {

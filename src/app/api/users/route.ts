@@ -48,10 +48,15 @@ export async function GET(req: NextRequest) {
         manager: { select: { id: true, name: true, email: true, employeeCode: true } },
       },
     }),
-    // Which users have an Android app signed in on a live device (for the admin indicator).
+    // All active Android installs (for the admin indicator). Ordered newest-first so
+    // the reported app version is the most recent one any of their devices reported.
     canManage
-      ? db.pushDevice.findMany({ where: { active: true }, select: { userId: true }, distinct: ['userId'] })
-      : Promise.resolve([] as { userId: string }[]),
+      ? db.pushDevice.findMany({
+          where: { active: true },
+          select: { userId: true, appVersion: true },
+          orderBy: { createdAt: 'desc' },
+        })
+      : Promise.resolve([] as { userId: string; appVersion: string | null }[]),
   ])
 
   if (!canManage) {
@@ -80,6 +85,13 @@ export async function GET(req: NextRequest) {
     managersByEmployee.set(m.employeeId, arr)
   }
 
+  // Newest-first, so the first version seen per user is their most recent known one.
+  const appVersionByUser = new Map<string, string | null>()
+  for (const d of appDevices) {
+    if (!appVersionByUser.has(d.userId) && d.appVersion) {
+      appVersionByUser.set(d.userId, d.appVersion)
+    }
+  }
   const appUserIds = new Set(appDevices.map((d) => d.userId))
   const managerIds = new Set(mappings.map((m) => m.manager.id))
 
@@ -93,6 +105,7 @@ export async function GET(req: NextRequest) {
       password: u.passwordPlain ?? null,
       passwordPlain: undefined,
       hasApp: appUserIds.has(u.id),
+      appVersion: appVersionByUser.get(u.id) ?? null,
     })),
   })
 }

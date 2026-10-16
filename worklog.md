@@ -648,4 +648,21 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 Stage Summary:
 - Tagged employees now appear by name (not employee code) in a task's comment history and in the resulting mention notification.
 
+---
+
+Task ID: 35
+Agent: Z.ai Code (main)
+Task: "On the admin panel under user details, next to the Android-app symbol beside a user's name, show in small font the app version that user is currently on."
+
+Work Log:
+- Data: added a nullable `appVersion` column to the `PushDevice` model (pushed to the live DB via `prisma db push`) so each registered Android install can record the APK version it is running.
+- Client (`push-client.ts`): new `getNativeAppVersion()` helper reads the native APK `versionName` through the `@capacitor/app` plugin's `App.getInfo()` (null in a plain browser or on an older build). The FCM registration POST to `/api/push/devices` now includes `appVersion`. Installed the `@capacitor/app` dependency (8.1.2) and ran `npx cap sync android` so the plugin is registered for the next APK build (the `/android/` tree is gitignored, so `bun install` + `npx cap sync` regenerates it on rebuild).
+- Server: `POST /api/push/devices` stores the reported `appVersion` on the device row (truncated to 20 chars). `GET /api/users` returns, per user, the most recent non-null `appVersion` across their active installs (newest device first) alongside the existing `hasApp` flag.
+- UI (`admin-panel.tsx`): the `AndroidMark` component now takes an optional `version` and renders a small muted `v1.2` label beside the robot icon (with an updated tooltip naming the version). Both the mobile card and desktop table rows pass `u.appVersion`.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles; `prisma db push` applied cleanly and the client regenerated. Live E2E on the standalone server (PORT 3311, real Neon DB): a device registered with an appVersion flipped the user to `hasApp:true` and `appVersion` set; re-registering the same token with a newer version updated it; a second (newer) device with no version did not mask the known version (newest non-null wins); deleting the devices cleared both flags back to false/null. 12/12. Temp files and the server process cleaned up. Note: the native `App.getInfo()` path can only be exercised once a new APK is built with the `@capacitor/app` plugin — until then existing installs report no version and show the icon without a label.
+
+Stage Summary:
+- The admin panel now shows the Android app version (e.g. `v1.2`) in small font next to the Android symbol on each user who has the app installed, sourced from the version the app reports when it registers for push (requires a one-time APK rebuild that includes `@capacitor/app`).
+
 
