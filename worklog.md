@@ -681,4 +681,22 @@ Verified: Gradle reported BUILD SUCCESSFUL; `aapt dump badging` on the APK shows
 Stage Summary:
 - Tasknet v1.3 APK (versionCode 4) is built and published. Installed v1.2 devices will be prompted to update on next launch, and once on v1.3 the app reports its version to the server so the admin panel shows `v1.3` next to the Android icon.
 
+---
+
+Task ID: 37
+Agent: Z.ai Code (main)
+Task: "Whoever has not allowed push notifications should get the permission prompt repeatedly on every app open and be forced to accept it."
+
+Work Log:
+- Web (`app.tsx`): the mandatory notification gate now re-checks on every open - initial load, returning to the tab (`visibilitychange`) and refocusing the window (`focus`) - and forces the gate whenever `Notification.permission !== 'granted'`. Added an `isNativeApp()` short-circuit so the browser gate never runs inside the Android shell, where the native activity owns the permission dialog.
+- Web (`notification-gate.tsx`): while the permission is still undecided the gate now calls `Notification.requestPermission()` immediately on open (best-effort: Chrome ignores it without a user gesture and resolves back to `default`, so the Allow button stays; Firefox/Safari can surface the prompt right away), and re-reads the permission on every `visibilitychange`/`focus` so a user who flips the setting while backgrounded gets the correct state. The gate remains mandatory and non-dismissible for `default` and `denied`.
+- Android (`MainActivity.java`): enforcement now also runs in `onResume` (alongside `onStart`), and a new `permissionRequestInFlight` guard stops the in-app dialog from stacking on top of the OS prompt. On grant the in-app dialog is dismissed and the WebView is shown (fixing the case where a user enables notifications in Settings and returns to a still-hidden WebView). The positive action follows `shouldShowRequestPermissionRationale`: "Allow" (re-asks through the OS dialog, every open) while Android still permits it, otherwise "Open settings". Hiding the WebView plus a blocking dialog whose only choices are "Allow"/"Open settings" and "Not now" (which exits) keeps un-allowed users out on every launch and resume.
+- Note: browsers permanently stop showing their own permission prompt once the user denies; from then on the forced gate explains how to re-enable it in site settings, and nothing can re-trigger the native prompt. The Android change needs a new APK (the `android/` tree is git-ignored); the web change ships with the server.
+- Release: bumped the native version (`android/app/build.gradle`: versionCode 4 -> 5, versionName "1.3" -> "1.4") and the web-side `APP_VERSION` (`src/lib/native.ts` -> `1.4`), ran `.zscripts\build-apk.ps1`, and published `android-app\Tasknet-v1.4.apk` + `android-app\latest.json` (version 1.4 / versionCode 5) with the README updated to list v1.4 as current.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiled; `gradlew :app:compileReleaseJavaWithJavac` reported BUILD SUCCESSFUL. `build-apk.ps1` finished with BUILD SUCCESSFUL and `aapt dump badging` on `android-app\Tasknet-v1.4.apk` shows `versionCode='5' versionName='1.4'` for `com.avinash.tasknet`; `android-app/latest.json` reports version 1.4 / versionCode 5 with the v1.4 URL and size. The permission dialog is an OS/browser surface, so it cannot be asserted from an automated headless test.
+
+Stage Summary:
+- A user who has not allowed notifications is now re-prompted and blocked on every app open: on the web the mandatory gate re-appears on load and on refocus (and tries the browser prompt immediately while it is still undecided), and in the Android app (v1.4) the native permission dialog is re-enforced on every start/resume with only "Allow"/"Open settings" or exit.
+
 

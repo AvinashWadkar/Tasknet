@@ -25,6 +25,7 @@ import { NotificationBell } from './notification-bell'
 import { AppDownloadButton } from './app-download-button'
 import { NotificationGate } from './notification-gate'
 import { unsubscribeForNativePush } from './push-client'
+import { isNativeApp } from '@/lib/native'
 import { useRealtime } from '@/hooks/use-realtime'
 import type { RealtimeEvent } from '@/lib/realtime'
 import { NewTaskDialog } from './new-task-dialog'
@@ -86,13 +87,31 @@ export function TaskManagerApp() {
     loadMe()
   }, [loadMe])
 
-  // On every login, re-check the browser notification permission.
-  // While it's not decided (default) or it's blocked (denied), force the gate.
+  // On every open — initial load, returning to the tab, and refocusing the
+  // window — re-check the browser notification permission. While it is not
+  // granted the mandatory gate is forced, so a user who never allowed
+  // notifications keeps being asked and cannot use the app until they do.
   useEffect(() => {
     if (!me) return
-    if (typeof window === 'undefined' || !('Notification' in window)) return
-    if (Notification.permission === 'default' || Notification.permission === 'denied') {
-      setNotifGateOpen(true)
+    if (typeof window === 'undefined') return
+    // Inside the Android shell the native activity owns the permission dialog,
+    // so the browser gate must not also appear.
+    if (isNativeApp()) return
+    if (!('Notification' in window)) return
+
+    const check = () => {
+      if (Notification.permission !== 'granted') setNotifGateOpen(true)
+    }
+    check()
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
     }
   }, [me])
 

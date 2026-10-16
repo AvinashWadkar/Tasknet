@@ -19,11 +19,40 @@ export function NotificationGate({ open, onDone }: { open: boolean; onDone: () =
 
   useEffect(() => {
     if (!open) return
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      const t = setTimeout(() => setPerm('unsupported'), 0)
+      return () => clearTimeout(t)
+    }
+
+    const sync = () => {
+      const cur = Notification.permission as Perm
+      setPerm(cur)
+      if (cur === 'granted') onDone()
+    }
+
+    // Best-effort: while the choice is still undecided, ask the browser right
+    // away so the permission prompt appears on every open without an extra click.
+    // Browsers that require a gesture simply resolve back to 'default' and the
+    // Allow button below stays available.
     const t = setTimeout(() => {
-      if (typeof window === 'undefined' || !('Notification' in window)) setPerm('unsupported')
-      else setPerm(Notification.permission as Perm)
+      sync()
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then(sync).catch(() => {})
+      }
     }, 0)
-    return () => clearTimeout(t)
+
+    // The user may flip the OS/browser setting while the page is backgrounded,
+    // so re-read the permission every time the gate is brought back to the front.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
   }, [open])
 
   if (!open || perm === 'checking' || perm === 'granted') return null

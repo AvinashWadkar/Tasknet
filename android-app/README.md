@@ -6,7 +6,8 @@ assets in `public/`.
 | File | Purpose |
 | --- | --- |
 | `latest.json` | Release manifest the app reads to detect a newer build. Regenerated on every build. |
-| `Tasknet-v1.3.apk` | Current release. Signed; install it directly on a phone. |
+| `Tasknet-v1.4.apk` | Current release. Signed; install it directly on a phone. |
+| `Tasknet-v1.3.apk` | Previous release, kept so devices on v1.3 can be updated. |
 | `Tasknet-v1.2.apk` | Previous release, kept so devices on v1.2 can be updated. |
 | `Tasknet-v1.1.apk` | Previous release, kept so devices on v1.1 can be updated. |
 | `Tasknet-v1.0.apk` | Previous release, kept so devices on v1.0 can be updated. |
@@ -44,13 +45,13 @@ when they return.
 
 ## How it reaches users
 
-The download button on the site points at `/download/Tasknet-v1.3.apk`. Next.js
+The download button on the site points at `/download/Tasknet-v1.4.apk`. Next.js
 only serves files from `public/`, so the Docker build copies this folder into
 `public/download/` during the image build. Locally, copy it there yourself:
 
 ```powershell
 New-Item -ItemType Directory -Force public\download
-Copy-Item android-app\Tasknet-v1.3.apk public\download\
+Copy-Item android-app\Tasknet-v1.4.apk public\download\
 ```
 
 `NEXT_PUBLIC_APK_URL` overrides the URL, so you can point the button at a GitHub
