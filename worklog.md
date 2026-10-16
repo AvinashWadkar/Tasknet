@@ -553,3 +553,34 @@ Verified: tsc (only the 4 pre-existing errors); `next build` compiles; both E2E 
 Stage Summary:
 - Confirmed and hardened the feature: a task's creator, any manager over the creator/assignees, and the admin can exclude an employee from an existing (non-aborted) task, the removal is written to the task history, and a task always keeps at least one assignee. Manager edit rights now resolve identically in the API and the UI.
 
+---
+
+Task ID: 29
+Agent: Z.ai Code (main)
+Task: "Recurring task edit should ask this edit need to be done for only this task or all future tasks."
+
+Work Log:
+- UI (task-detail-dialog.tsx): the Edit-task dialog now shows a scope chooser ("This is a recurring task" panel with two selectable cards) only when the task is recurring + has a recurFreq. Options: "This task only" (default, just the current occurrence) and "This and all future tasks" (update every upcoming occurrence). Added editScope state (reset to 'single' in openEdit); saveEdit appends `applyTo: editScope` to the PATCH body for recurring tasks and the success toast notes when changes were applied to all future occurrences.
+- Server (PATCH /api/tasks/[id]): reads `applyTo: 'single' | 'future'`. For 'future' on a recurring task it records a summary TASK_UPDATED activity on the current task ("Changes applied to this and all future occurrences"), then propagates the edited title/description and shifts the due date by the same delta to every later non-aborted occurrence in the series (series key = rootTaskId ?? id, recurOccurrence > current), logging "Updated to match an earlier occurrence of this recurring series" on each and publishing a task update for open clients. Later occurrences created after the edit inherit the values automatically, because the spawner copies these fields from the occurrence just completed. Recurrence config (freq/interval/weekdays/end) stays non-editable via PATCH.
+- Added the Repeat icon (already imported) to the scope panel heading.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311, real Neon DB): created a throwaway employee + a daily recurring task due 2027-01-01, completed occurrence #1 (spawns #2) and #2 (spawns #3); editing occurrence #1 with applyTo:'future' (rename + due shifted +10 days) renamed #1/#2/#3, shifted #2/#3 due dates by exactly the same delta, logged the summary on #1 and propagation entries on #2/#3; a follow-up applyTo:'single' edit left #2 untouched. 19/19; all throwaway tasks/users deleted and temp files cleaned up.
+
+Stage Summary:
+- Editing a recurring task now asks whether the change applies to just the current occurrence or to this and all future occurrences. "All future" renames/re-describes and shifts the due date of every later occurrence in the series (each change recorded in history), and new occurrences keep inheriting the latest values.
+
+---
+
+Task ID: 30
+Agent: Z.ai Code (main)
+Task: "Tag (mention) an employee in a task comment; the tagged employee should get a notification."
+
+Work Log:
+- Server (POST /api/tasks/[id]/comment): accepts an optional `mentionIds: string[]` (the employees chosen in the picker) and also scans the comment text for `@employeeCode` tokens, so a typed mention still works without the picker. Resolves both against active users, drops the acting user, and after recording the COMMENT activity notifies the tagged employees through notifyAssignees with type 'MENTION' (title "<actor> tagged you in a comment", message names the task + a snippet of the comment). The notification carries the taskId so tapping it opens the task; the response returns `mentioned` (count) for the UI toast.
+- UI (task-detail-dialog.tsx): added an @mention picker to the comment box. Typing "@" opens a filtered dropdown (by name or employee code, capped at 6); picking a person inserts `@CODE ` and records their id. Selected people appear as removable chips above the input (removing a chip also strips the token from the text). The comment is posted with `{ text, mentionIds }`; on success the mention chips reset and a toast reports how many were tagged. A hint line explains tagged employees get a notification. Reused the existing /api/users directory (loaded when the viewer can comment) and the existing notifyAssignees/web-push pipeline.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311, real Neon DB): admin created a task for a throwaway commenter; the commenter posted a comment tagging a second throwaway employee by id + @code -> 200 with mentioned=1 and the tagged user's /api/notifications contained a MENTION notification pointing at the task; the commenter got no self-notification; a text-only `@code` mention also resolved (1); mentioning yourself notified no one (0); empty comment 400; a third non-participant got 403. 14/14; all throwaway tasks/users deleted and temp files cleaned up.
+
+Stage Summary:
+- Employees can now @mention (tag) colleagues in a task comment. Each tagged employee receives a bell + push notification naming the task and the comment, and tapping it opens that task. Mentions can be picked from a dropdown or typed as @employeeCode.
+

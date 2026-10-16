@@ -55,6 +55,8 @@ import {
   Pencil,
   Trash2,
   UserMinus,
+  AtSign,
+  X,
 } from 'lucide-react'
 
 const ACTION_STYLE: Record<string, { icon: typeof Flag; cls: string }> = {
@@ -97,6 +99,7 @@ export function TaskDetailDialog({
   const [editDate, setEditDate] = useState('')
   const [editTime, setEditTime] = useState('')
   const [editBusy, setEditBusy] = useState(false)
+  const [editScope, setEditScope] = useState<'single' | 'future'>('single')
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
@@ -115,6 +118,10 @@ export function TaskDetailDialog({
   const [addSel, setAddSel] = useState<string | null>(null)
   const [addingBusy, setAddingBusy] = useState(false)
   const [removeBusyId, setRemoveBusyId] = useState<string | null>(null)
+  const [mentionUsers, setMentionUsers] = useState<{ id: string; name: string; employeeCode: string }[]>([])
+  const [mentionIds, setMentionIds] = useState<string[]>([])
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
   const [abortOpen, setAbortOpen] = useState(false)
   const [abortReason, setAbortReason] = useState('')
   const [abortBusy, setAbortBusy] = useState(false)
@@ -142,6 +149,15 @@ export function TaskDetailDialog({
     }
   }, [])
 
+  const loadMentionUsers = useCallback(async () => {
+    try {
+      const r = await api<{ users: { id: string; name: string; employeeCode: string }[] }>('/api/users')
+      setMentionUsers(r.users.map((u) => ({ id: u.id, name: u.name, employeeCode: u.employeeCode })))
+    } catch {
+      // ignore
+    }
+  }, [])
+
   const load = useCallback(async () => {
     if (!taskId) return
     setError(null)
@@ -156,10 +172,11 @@ export function TaskDetailDialog({
       setCanDelete(res.canDelete)
       setCanAbort(res.canAbort)
       if (res.canEdit) void loadAddUsers(res.task)
+      if (res.canAct) void loadMentionUsers()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load task')
     }
-  }, [taskId, loadAddUsers])
+  }, [taskId, loadAddUsers, loadMentionUsers])
 
   useEffect(() => {
     if (taskId) load()
@@ -177,10 +194,11 @@ export function TaskDetailDialog({
       setCanDelete(res.canDelete)
       setCanAbort(res.canAbort)
       if (res.canEdit) void loadAddUsers(res.task)
+      if (res.canAct) void loadMentionUsers()
     } catch {
       // ignore
     }
-  }, [taskId, loadAddUsers])
+  }, [taskId, loadAddUsers, loadMentionUsers])
 
   useRealtime(
     useCallback(
@@ -296,17 +314,45 @@ export function TaskDetailDialog({
     if (!task || !comment.trim()) return
     setCommentBusy(true)
     try {
-      const res = await api<{ activity: { id: string; actorName: string; action: string; detail: string; createdAt: string } }>(
+      const res = await api<{ activity: { id: string; actorName: string; action: string; detail: string; createdAt: string }; mentioned?: number }>(
         `/api/tasks/${task.id}/comment`,
-        { method: 'POST', body: JSON.stringify({ text: comment.trim() }) }
+        { method: 'POST', body: JSON.stringify({ text: comment.trim(), mentionIds }) }
       )
       setTask((prev) => (prev ? { ...prev, activities: [res.activity, ...prev.activities] } : prev))
       setComment('')
+      setMentionIds([])
+      setMentionOpen(false)
+      if (res.mentioned) {
+        toast({ title: 'Comment posted', description: `${res.mentioned} employee${res.mentioned > 1 ? 's' : ''} tagged.` })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add comment')
     } finally {
       setCommentBusy(false)
     }
+  }
+
+  function insertMention(u: { id: string; name: string; employeeCode: string }) {
+    setComment((prev) => `${prev.replace(/@[^\s@]*$/, '')}@${u.employeeCode} `)
+    setMentionIds((prev) => (prev.includes(u.id) ? prev : [...prev, u.id]))
+    setMentionOpen(false)
+    setMentionQuery('')
+  }
+
+  function onCommentChange(v: string) {
+    setComment(v)
+    const m = v.match(/(?:^|\s)@([A-Za-z0-9_]*)$/)
+    if (m) {
+      setMentionOpen(true)
+      setMentionQuery(m[1])
+    } else {
+      setMentionOpen(false)
+    }
+  }
+
+  function removeMention(u: { id: string; employeeCode: string }) {
+    setMentionIds((prev) => prev.filter((x) => x !== u.id))
+    setComment((prev) => prev.replace(new RegExp(`@${u.employeeCode}\\b`, 'g'), '').replace(/[ \t]{2,}/g, ' ').trimStart())
   }
 
   async function addAssignee() {
@@ -456,6 +502,7 @@ export function TaskDetailDialog({
     setEditDesc(task.description || '')
     setEditDate(istDate)
     setEditTime(istTime)
+    setEditScope('single')
     setEditOpen(true)
   }
 
@@ -469,12 +516,19 @@ export function TaskDetailDialog({
           title: editTitle.trim(),
           description: editDesc.trim(),
           dueDate: { date: editDate, time: editTime || '18:00' },
+          ...(task.recurring && task.recurFreq ? { applyTo: editScope } : {}),
         }),
       })
       setTask(res.task)
       setEditOpen(false)
       onChanged()
-      toast({ title: 'Task updated' })
+      toast({
+        title: 'Task updated',
+        description:
+          task.recurring && task.recurFreq && editScope === 'future'
+            ? 'Changes applied to this and all future occurrences.'
+            : undefined,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update task')
     } finally {
@@ -508,6 +562,16 @@ export function TaskDetailDialog({
     task && myAssignment && myAssignment.status !== 'COMPLETED' && new Date(task.dueDate) < new Date()
   const isCreator = task?.creator.id === me.id
   const isAborted = task?.status === 'ABORTED'
+
+  const mentionMatches = mentionOpen
+    ? mentionUsers
+        .filter((u) => {
+          if (mentionIds.includes(u.id)) return false
+          const q = mentionQuery.toLowerCase()
+          return !q || u.name.toLowerCase().includes(q) || u.employeeCode.toLowerCase().includes(q)
+        })
+        .slice(0, 6)
+    : []
 
   return (
     <Dialog open={Boolean(taskId)} onOpenChange={(o) => !o && onClose()}>
@@ -833,18 +897,68 @@ export function TaskDetailDialog({
                   {canAct && (
                     <div className="mt-2 border-t border-slate-100 pt-3">
                       <Label htmlFor="cmt" className="sr-only">Add comment</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="cmt"
-                          placeholder="Add a comment to the history…"
-                          value={comment}
-                          onChange={(e) => setComment(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && postComment()}
-                        />
+                      {mentionIds.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {mentionIds.map((id) => {
+                            const u = mentionUsers.find((x) => x.id === id)
+                            if (!u) return null
+                            return (
+                              <span
+                                key={id}
+                                className="inline-flex items-center gap-1 rounded-full bg-brand-50 py-0.5 pl-1.5 pr-1 text-xs font-medium text-brand-700"
+                              >
+                                <AtSign className="h-3 w-3" />
+                                {u.name}
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${u.name}`}
+                                  className="rounded-full p-0.5 hover:bg-brand-100"
+                                  onClick={() => removeMention({ id: u.id, employeeCode: u.employeeCode })}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                      <div className="relative flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            id="cmt"
+                            placeholder="Add a comment… use @ to tag an employee"
+                            value={comment}
+                            onChange={(e) => onCommentChange(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && postComment()}
+                            onBlur={() => window.setTimeout(() => setMentionOpen(false), 120)}
+                          />
+                          {mentionOpen && mentionMatches.length > 0 && (
+                            <div className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+                              {mentionMatches.map((u) => (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm hover:bg-slate-50"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault()
+                                    insertMention(u)
+                                  }}
+                                >
+                                  <AtSign className="h-3.5 w-3.5 text-brand-500" />
+                                  <span className="font-medium text-slate-700">{u.name}</span>
+                                  <span className="ml-auto text-xs text-slate-400">{u.employeeCode}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <Button size="icon" aria-label="Post comment" onClick={postComment} disabled={commentBusy || !comment.trim()}>
                           {commentBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquarePlus className="h-4 w-4" />}
                         </Button>
                       </div>
+                      <p className="mt-1.5 flex items-center gap-1 text-[11px] text-slate-400">
+                        <AtSign className="h-3 w-3" /> Tagged employees get a notification that opens this task.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1199,6 +1313,44 @@ export function TaskDetailDialog({
                   <Input id="edit-time" type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
                 </div>
               </div>
+              {task.recurring && task.recurFreq && (
+                <div className="space-y-2 rounded-lg border border-brand-100 bg-brand-50/50 p-3">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-brand-700">
+                    <Repeat className="h-3.5 w-3.5" /> This is a recurring task
+                  </p>
+                  <p className="text-xs text-slate-500">Where should these changes apply?</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      aria-pressed={editScope === 'single'}
+                      onClick={() => setEditScope('single')}
+                      className={cn(
+                        'rounded-lg border p-2.5 text-left transition',
+                        editScope === 'single'
+                          ? 'border-brand-500 bg-white ring-1 ring-brand-500'
+                          : 'border-slate-200 bg-white hover:border-brand-300'
+                      )}
+                    >
+                      <span className="block text-sm font-medium text-slate-800">This task only</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">Just the current occurrence</span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={editScope === 'future'}
+                      onClick={() => setEditScope('future')}
+                      className={cn(
+                        'rounded-lg border p-2.5 text-left transition',
+                        editScope === 'future'
+                          ? 'border-brand-500 bg-white ring-1 ring-brand-500'
+                          : 'border-slate-200 bg-white hover:border-brand-300'
+                      )}
+                    >
+                      <span className="block text-sm font-medium text-slate-800">This and all future tasks</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">Update every upcoming occurrence</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={editBusy}>Cancel</AlertDialogCancel>

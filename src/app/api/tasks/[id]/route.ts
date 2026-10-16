@@ -160,9 +160,61 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
     }
 
+    // "This and all future tasks" applies to every occurrence of a recurring series.
+    const applyToFuture = body.applyTo === 'future' && task.recurring && !!task.recurFreq
+    if (applyToFuture) {
+      logs.push({
+        actorId: session.id,
+        actorName: actor,
+        action: 'TASK_UPDATED',
+        detail: 'Changes applied to this and all future occurrences',
+      })
+    }
+
     await db.task.update({ where: { id: task.id }, data })
     if (logs.length) {
       await db.taskActivity.createMany({ data: logs.map((l) => ({ ...l, taskId: task.id })) })
+    }
+
+    // Propagate the edited fields to the later occurrences that already exist in
+    // the series. Occurrences created afterwards inherit them automatically,
+    // because the spawner copies these fields from the occurrence just completed.
+    if (applyToFuture) {
+      const seriesKey = task.rootTaskId ?? task.id
+      const hasTitle = Object.prototype.hasOwnProperty.call(data, 'title')
+      const hasDescription = Object.prototype.hasOwnProperty.call(data, 'description')
+      const dueDelta =
+        data.dueDate instanceof Date ? data.dueDate.getTime() - task.dueDate.getTime() : 0
+
+      const futureTasks = await db.task.findMany({
+        where: {
+          id: { not: task.id },
+          status: { not: 'ABORTED' },
+          recurOccurrence: { gt: task.recurOccurrence ?? 1 },
+          OR: [{ rootTaskId: seriesKey }, { id: seriesKey }],
+        },
+        select: { id: true, dueDate: true },
+      })
+
+      for (const ft of futureTasks) {
+        const fdata: Record<string, unknown> = {}
+        if (hasTitle) fdata.title = data.title
+        if (hasDescription) fdata.description = data.description
+        if (dueDelta) fdata.dueDate = new Date(ft.dueDate.getTime() + dueDelta)
+        if (Object.keys(fdata).length === 0) continue
+
+        await db.task.update({ where: { id: ft.id }, data: fdata })
+        await db.taskActivity.create({
+          data: {
+            taskId: ft.id,
+            actorId: session.id,
+            actorName: actor,
+            action: 'TASK_UPDATED',
+            detail: 'Updated to match an earlier occurrence of this recurring series',
+          },
+        })
+        publish({ type: 'task', taskId: ft.id, action: 'updated' })
+      }
     }
 
     const updated = await db.task.findUnique({ where: { id: task.id }, include: taskInclude })
