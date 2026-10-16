@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getSessionUser } from '@/lib/auth'
 import { getDescendantIds } from '@/lib/hierarchy'
 import { istDueDate, fmtDate } from '@/lib/dates'
+import { recurrenceLabel, parseWeekdays, weekdaysToStr } from '@/lib/recurring'
 import { notifyAssignees } from '@/lib/notify'
 import { taskInclude } from '@/lib/task-include'
 import { publish } from '@/lib/realtime'
@@ -117,6 +118,116 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       }
     }
 
+    // Optional collation validator — set, change or clear.
+    let newValidator: { id: string; name: string } | null = null
+    if ('validatorId' in body) {
+      const raw = body.validatorId
+      const nextId = raw == null || raw === '' ? null : String(raw)
+      if (nextId !== task.validatorId) {
+        if (nextId) {
+          const v = await db.user.findFirst({ where: { id: nextId, isActive: true }, select: { id: true, name: true } })
+          if (!v) return NextResponse.json({ error: 'The selected validator was not found' }, { status: 400 })
+          data.validatorId = v.id
+          newValidator = v
+          logs.push({ actorId: session.id, actorName: actor, action: 'VALIDATION', detail: `Collation validator set to ${v.name}` })
+        } else {
+          data.validatorId = null
+          logs.push({ actorId: session.id, actorName: actor, action: 'VALIDATION', detail: 'Validator removed' })
+        }
+      }
+    }
+
+    // Recurrence schedule — turn the series on/off or change the cadence.
+    let recurChanged = false
+    if (
+      'recurring' in body ||
+      ['recurFreq', 'recurInterval', 'recurEndType', 'recurEndDate', 'recurCount', 'recurWeekdays', 'recurMonthDay'].some(
+        (k) => k in body
+      )
+    ) {
+      const targetRecurring = typeof body.recurring === 'boolean' ? body.recurring : !!task.recurring
+      if (!targetRecurring) {
+        if (task.recurring) {
+          data.recurring = false
+          data.recurFreq = null
+          data.recurInterval = null
+          data.recurEndType = null
+          data.recurEndDate = null
+          data.recurCount = null
+          data.recurWeekdays = null
+          data.recurMonthDay = null
+          recurChanged = true
+          logs.push({ actorId: session.id, actorName: actor, action: 'RECURRENCE', detail: 'Recurrence turned off' })
+        }
+      } else {
+        const freq = String(body.recurFreq ?? task.recurFreq ?? '')
+        if (!['DAILY', 'WEEKLY', 'MONTHLY'].includes(freq)) {
+          return NextResponse.json({ error: 'Choose how often the task repeats' }, { status: 400 })
+        }
+        let interval = Math.min(99, Math.max(1, Math.floor(Number(body.recurInterval ?? task.recurInterval ?? 1) || 1)))
+        const endType = ['NEVER', 'ON_DATE', 'AFTER_N'].includes(String(body.recurEndType ?? task.recurEndType))
+          ? String(body.recurEndType ?? task.recurEndType)
+          : 'NEVER'
+        let endDate: Date | null = null
+        if (endType === 'ON_DATE') {
+          const raw = String(body.recurEndDate ?? '')
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            return NextResponse.json({ error: 'Pick the date the series should end on' }, { status: 400 })
+          }
+          endDate = istDueDate(raw, '23:59')
+        }
+        let count: number | null = null
+        if (endType === 'AFTER_N') {
+          count = Math.floor(Number(body.recurCount))
+          if (!Number.isFinite(count) || count < 2) {
+            return NextResponse.json({ error: 'Occurrence count must be at least 2' }, { status: 400 })
+          }
+        }
+        let weekdays: string | null = null
+        if (freq === 'WEEKLY') {
+          weekdays = weekdaysToStr(parseWeekdays(typeof body.recurWeekdays === 'string' ? body.recurWeekdays : ''))
+          if (weekdays) interval = 1
+        }
+        let monthDay: number | null = null
+        if (freq === 'MONTHLY' && body.recurMonthDay != null && body.recurMonthDay !== '') {
+          const md = Math.floor(Number(body.recurMonthDay))
+          if (Number.isFinite(md) && md >= 1 && md <= 31) monthDay = md
+        }
+        const changed =
+          !task.recurring ||
+          task.recurFreq !== freq ||
+          (task.recurInterval ?? 1) !== interval ||
+          (task.recurEndType ?? 'NEVER') !== endType ||
+          (task.recurCount ?? null) !== count ||
+          (task.recurWeekdays ?? null) !== weekdays ||
+          (task.recurMonthDay ?? null) !== monthDay ||
+          (task.recurEndDate ? task.recurEndDate.getTime() : null) !== (endDate ? endDate.getTime() : null)
+        if (changed) {
+          data.recurring = true
+          data.recurFreq = freq
+          data.recurInterval = interval
+          data.recurEndType = endType
+          data.recurEndDate = endDate
+          data.recurCount = count
+          data.recurWeekdays = weekdays
+          data.recurMonthDay = monthDay
+          recurChanged = true
+          const endNote =
+            endType === 'ON_DATE' && endDate
+              ? ` until ${fmtDate(endDate)}`
+              : endType === 'AFTER_N' && count
+                ? ` — ${count} times total`
+                : ''
+          logs.push({
+            actorId: session.id,
+            actorName: actor,
+            action: 'RECURRENCE',
+            detail: `Recurrence updated — ${recurrenceLabel({ recurring: true, recurFreq: freq, recurInterval: interval, recurWeekdays: weekdays, recurMonthDay: monthDay })}${endNote}`,
+          })
+        }
+      }
+    }
+
     const addedIds: string[] = []
     if (Array.isArray(body.addAssigneeIds) && body.addAssigneeIds.length > 0) {
       const existing = new Set(task.assignments.map((a) => a.userId))
@@ -201,6 +312,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         if (hasTitle) fdata.title = data.title
         if (hasDescription) fdata.description = data.description
         if (dueDelta) fdata.dueDate = new Date(ft.dueDate.getTime() + dueDelta)
+        if (Object.prototype.hasOwnProperty.call(data, 'validatorId')) fdata.validatorId = data.validatorId
+        if (recurChanged) {
+          fdata.recurring = data.recurring
+          fdata.recurFreq = data.recurFreq
+          fdata.recurInterval = data.recurInterval
+          fdata.recurEndType = data.recurEndType
+          fdata.recurEndDate = data.recurEndDate
+          fdata.recurCount = data.recurCount
+          fdata.recurWeekdays = data.recurWeekdays
+          fdata.recurMonthDay = data.recurMonthDay
+        }
         if (Object.keys(fdata).length === 0) continue
 
         await db.task.update({ where: { id: ft.id }, data: fdata })
@@ -226,6 +348,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         excludeIds: [session.id],
         title: 'You were added to a task',
         message: `${session.name} added you to "${updated.title}" - due ${fmtDate(updated.dueDate)}.`,
+      })
+    }
+
+    if (newValidator && updated) {
+      await notifyAssignees({
+        taskId: task.id,
+        recipientIds: [newValidator.id],
+        excludeIds: [session.id],
+        type: 'TASK_VALIDATION',
+        title: 'You were set as a validator',
+        message: `${session.name} chose you to validate "${updated.title}". You'll be notified when a part is sent to you.`,
       })
     }
 
