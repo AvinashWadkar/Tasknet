@@ -584,3 +584,20 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 Stage Summary:
 - Employees can now @mention (tag) colleagues in a task comment. Each tagged employee receives a bell + push notification naming the task and the comment, and tapping it opens that task. Mentions can be picked from a dropdown or typed as @employeeCode.
 
+---
+
+Task ID: 31
+Agent: Z.ai Code (main)
+Task: "Once clicked on popup notification it should take to the app."
+
+Work Log:
+- Symptom: on the Android app tapping an FCM notification did not open the app at all.
+- Root cause: src/lib/fcm.ts sent the Android notification with `clickAction: 'OPEN_TASK'`. FCM turns a custom click_action into an implicit intent `new Intent("OPEN_TASK").setPackage(<pkg>)`, which only resolves if some activity declares an `<intent-filter>` for that action (plus the DEFAULT category). android/app/src/main/AndroidManifest.xml declares only MAIN/LAUNCHER, so the intent matched nothing and the tap did nothing.
+- Fix (server-side, no APK rebuild): removed the custom `clickAction` from the FCM payload. Without it FCM uses the app's launcher intent, so the tap opens the app; the `data` payload (incl. taskId) rides along in the launcher intent's extras, which the Capacitor plugin reads in handleOnNewIntent and re-emits as `pushNotificationActionPerformed` — the live web JS (initNativeNotificationTaps, shipped in 23afed7) then routes to /?task=<id>. Added a comment in fcm.ts explaining why clickAction must stay unset.
+- Note: the APK is a thin WebView shell loading the live site (capacitor.config.ts server.url), so the tap-handling JS is served from the server and the fix needs only a redeploy — no new APK. The alternative (keep click_action and add an OPEN_TASK intent-filter to MainActivity) would require rebuilding and reinstalling the APK, so it was not used.
+
+Verified: tsc (only the 4 pre-existing errors); `next build` compiles. Behavior confirmed against the FCM documentation (launcher intent + data-in-extras when click_action is unset; a custom click_action with no matching intent-filter makes the tap a no-op — the exact reported symptom).
+
+Stage Summary:
+- Tapping a Tasknet notification on the Android app now opens the app (previously the custom click_action matched no activity and the tap did nothing), and it deep-links to the task via the Capacitor tap listener.
+
