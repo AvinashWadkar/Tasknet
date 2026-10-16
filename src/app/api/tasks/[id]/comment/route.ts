@@ -40,9 +40,17 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         isActive: true,
         OR: [{ id: { in: mentionIds } }, { employeeCode: { in: codeTokens } }],
       },
-      select: { id: true },
+      select: { id: true, name: true, employeeCode: true },
     })
     const recipientIds = tags.map((u) => u.id).filter((uid) => uid !== session.id)
+
+    // Replace @employeeCode tokens with the tagged person's name so the
+    // task history (and the notification) read naturally instead of IDs.
+    const nameByCode = new Map(tags.map((u) => [u.employeeCode.toLowerCase(), u.name]))
+    const displayText = text.replace(/@([A-Za-z0-9_]+)/g, (whole, code: string) => {
+      const name = nameByCode.get(code.toLowerCase())
+      return name ? `@${name}` : whole
+    })
 
     const activity = await db.taskActivity.create({
       data: {
@@ -50,7 +58,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         actorId: session.id,
         actorName: `${session.name} (${session.employeeCode})`,
         action: 'COMMENT',
-        detail: text,
+        detail: displayText,
       },
     })
 
@@ -61,7 +69,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         excludeIds: [session.id],
         type: 'MENTION',
         title: `${session.name} tagged you in a comment`,
-        message: `${session.name} mentioned you in "${task.title}": ${text.slice(0, 180)}`,
+        message: `${session.name} mentioned you in "${task.title}": ${displayText.slice(0, 180)}`,
       })
     }
 

@@ -617,4 +617,35 @@ Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` comp
 Stage Summary:
 - The task creator, a manager of anyone on the task, and the admin can now edit every detail of a task — title, description, due date & time, assignees, the collation validator and the full recurrence schedule — from a single Edit dialog, with every change written to the task history and, for recurring series, optionally applied to this and all future occurrences.
 
+---
+
+Task ID: 33
+Agent: Z.ai Code (main)
+Task: "Add a buzz icon against each assignee name in the task-detail popup, visible to the creator/validator/manager, that pings the assignee with a high-vibration push notification."
+
+Work Log:
+- Server: new endpoint `POST /api/tasks/[id]/buzz` with body `{ userId }`. Authorisation is the admin, the task creator, the collation validator, or a manager of anyone on the task (resolved via `getDescendantIds`); the target must be an assignee of the task. Self-buzz returns 400, a non-participant target returns 400, an unauthorised caller 403, and a per-(task,target) 10-second cooldown returns 429. A successful buzz writes a `BUZZ` notification for the target with `title: "<actor> buzzed you"` and `message: "<actor> buzzed you about \"<task>\"."` and returns `{ ok, buzzed: { id, name } }`.
+- Push plumbing: extended the FCM payload (`src/lib/fcm.ts`) with `highVibration` → `android.notification.defaultVibrateTimings:false` + a stronger `vibrateTimingsMillis` pattern and high priority; extended the web-push payload (`src/lib/webpush.ts`) with the same flag, passed through `notifyAssignees` (`src/lib/notify.ts`); and taught the service worker (`public/sw.js`) to use the longer `vibrate` pattern plus `requireInteraction`/`renotify` when a buzz arrives, so it stands out from ordinary task-assigned notifications. (Note: firebase-admin types require `vibrateTimingsMillis` to be `number[]`, not `string[]`.)
+- UI: the task detail dialog renders a bell-rang (`BellRing`) icon button on each assignee row when the viewer can edit or validate the task, it is not aborted and the row is not the viewer; clicking it POSTs the buzz and toasts the result.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311, real Neon DB): buzz succeeded (200), created a `BUZZ` notification carrying the task id/title for the target, a second immediate buzz hit the cooldown (429), self-buzz (400) and a non-participant target (400) and an unauthorised caller (403) were all rejected, and buzzing a different valid target succeeded; throwaway users/task deleted. 15/15.
+
+Stage Summary:
+- Creators, validators, managers and the admin can now buzz any assignee from the task-detail popup, delivering a distinct high-vibration push that opens the task; abuse is limited by a per-task/target 10-second cooldown.
+
+---
+
+Task ID: 34
+Agent: Z.ai Code (main)
+Task: "While tagging an employee in a comment it shows the employee ID in the task history; it should show the tagged person's name."
+
+Work Log:
+- Root cause: the @-mention picker inserts the raw token `@<employeeCode>` into the comment text, and the comment endpoint stored that text verbatim as the `COMMENT` task-history entry, so the history (and the MENTION notification message) displayed the employee code instead of the person's name.
+- Fix (`src/app/api/tasks/[id]/comment/route.ts`): the resolved tagged users query now also selects `name` and `employeeCode`, and before writing the activity the endpoint replaces each `@<employeeCode>` token with `@<name>` (case-insensitive, resolved from the same query, unknown tokens left untouched). The rendered text is used both for the stored `COMMENT` history detail and for the MENTION push message, so the history now reads naturally.
+
+Verified: tsc (only the 4 pre-existing errors) + eslint clean; `next build` compiles. Live E2E on the standalone server (PORT 3311, real Neon DB): tagged a newly created employee by both picker id and `@employeeCode` token in one comment; the POST response's activity detail and the `GET /api/tasks/[id]` history both showed `@<Name>` with no remaining `@<employeeCode>`, and the mention produced exactly one notification. 9/9. Throwaway task/user deleted and temp files/processes cleaned up.
+
+Stage Summary:
+- Tagged employees now appear by name (not employee code) in a task's comment history and in the resulting mention notification.
+
 
