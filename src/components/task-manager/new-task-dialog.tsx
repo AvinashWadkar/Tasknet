@@ -16,12 +16,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { InitialAvatar } from './shared'
 import { api } from './api'
-import { RECUR_FREQS, RECUR_UNIT, recurrenceLabel, type RecurFreq, type RecurEndType } from '@/lib/recurring'
-import { cn } from '@/lib/utils'
+import { RecurrenceFields, RECURRENCE_DEFAULT, recurrencePayload, type RecurrenceValue } from './recurrence-fields'
 import type { DirectoryUser } from './types'
-import { Loader2, Plus, Search, Users, X, Repeat, ShieldCheck } from 'lucide-react'
-
-const WEEKDAY_CHIPS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] // index 0 = ISO 1 (Monday)
+import { Loader2, Plus, Search, Users, X, ShieldCheck } from 'lucide-react'
 
 export function NewTaskDialog({
   open,
@@ -44,14 +41,7 @@ export function NewTaskDialog({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(false)
-  const [recurring, setRecurring] = useState(false)
-  const [recurFreq, setRecurFreq] = useState<RecurFreq>('WEEKLY')
-  const [recurInterval, setRecurInterval] = useState(1)
-  const [recurEndType, setRecurEndType] = useState<RecurEndType>('NEVER')
-  const [recurEndDate, setRecurEndDate] = useState('')
-  const [recurCount, setRecurCount] = useState(4)
-  const [recurDays, setRecurDays] = useState<Set<number>>(new Set())
-  const [recurMonthDay, setRecurMonthDay] = useState('')
+  const [recur, setRecur] = useState<RecurrenceValue>(RECURRENCE_DEFAULT)
   const [validatorId, setValidatorId] = useState('')
 
   useEffect(() => {
@@ -63,14 +53,7 @@ export function NewTaskDialog({
     setSelected(new Set())
     setSearch('')
     setError(null)
-    setRecurring(false)
-    setRecurFreq('WEEKLY')
-    setRecurInterval(1)
-    setRecurEndType('NEVER')
-    setRecurEndDate('')
-    setRecurCount(4)
-    setRecurDays(new Set())
-    setRecurMonthDay('')
+    setRecur(RECURRENCE_DEFAULT)
     setValidatorId('')
     setLoadingUsers(true)
     api<{ users: DirectoryUser[] }>('/api/users')
@@ -105,11 +88,11 @@ export function NewTaskDialog({
     if (!title.trim()) return setError('Please enter a task title')
     if (!date) return setError('Please pick a due date')
     if (selected.size === 0) return setError('Please select at least one employee to assign')
-    if (recurring && recurEndType === 'ON_DATE' && !recurEndDate)
+    if (recur.recurring && recur.recurEndType === 'ON_DATE' && !recur.recurEndDate)
       return setError('Pick the date the series should end on')
-    if (recurring && recurEndType === 'AFTER_N' && recurCount < 2)
+    if (recur.recurring && recur.recurEndType === 'AFTER_N' && recur.recurCount < 2)
       return setError('Occurrence count must be at least 2')
-    if (recurring && recurFreq === 'WEEKLY' && recurDays.size === 0 && recurInterval > 4)
+    if (recur.recurring && recur.recurFreq === 'WEEKLY' && recur.recurDays.length === 0 && recur.recurInterval > 4)
       return setError('Weekly interval looks too large — pick repeat days or a smaller interval')
     setBusy(true)
     try {
@@ -121,18 +104,7 @@ export function NewTaskDialog({
           dueDate: { date, time },
           assigneeIds: [...selected],
           validatorId: validatorId || undefined,
-          recurring,
-          ...(recurring
-            ? {
-                recurFreq,
-                recurInterval: recurFreq === 'WEEKLY' && recurDays.size > 0 ? 1 : recurInterval,
-                recurEndType,
-                recurEndDate: recurEndType === 'ON_DATE' ? recurEndDate : undefined,
-                recurCount: recurEndType === 'AFTER_N' ? recurCount : undefined,
-                recurWeekdays: recurFreq === 'WEEKLY' ? [...recurDays].join(',') : undefined,
-                recurMonthDay: recurFreq === 'MONTHLY' && recurMonthDay ? Number(recurMonthDay) : undefined,
-              }
-            : {}),
+          ...recurrencePayload(recur),
         }),
       })
       onCreated()
@@ -179,198 +151,7 @@ export function NewTaskDialog({
           </div>
 
           {/* Recurring */}
-          <div className="rounded-xl border border-slate-200 p-3">
-            <div className="flex items-center gap-2.5">
-              <Checkbox id="t-recur" checked={recurring} onCheckedChange={(v) => setRecurring(v === true)} />
-              <Repeat className="h-4 w-4 text-brand-600" aria-hidden="true" />
-              <Label htmlFor="t-recur" className="cursor-pointer text-sm font-medium text-slate-800">
-                Recurring
-              </Label>
-            </div>
-            <p className="mt-1 pl-[26px] text-xs text-slate-400">
-              A new copy with the same team is created automatically each time this task is completed. Upcoming repeats are previewed on the My Tasks calendar.
-            </p>
-
-            {recurring && (
-              <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-3" role="group" aria-label="Recurrence options">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <span className="w-16 text-xs font-semibold uppercase tracking-wide text-slate-500">Repeats</span>
-                  <div className="flex gap-1 rounded-lg bg-white p-1 ring-1 ring-slate-200">
-                    {RECUR_FREQS.map((f) => (
-                      <button
-                        key={f.value}
-                        type="button"
-                        onClick={() => setRecurFreq(f.value)}
-                        aria-pressed={recurFreq === f.value}
-                        className={cn(
-                          'rounded-md px-3 py-1 text-xs font-semibold transition',
-                          recurFreq === f.value ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-                        )}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {recurFreq === 'WEEKLY' && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <span className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Repeat on
-                    </span>
-                    <div className="flex flex-wrap gap-1" role="group" aria-label="Repeat weekdays">
-                      {WEEKDAY_CHIPS.map((label, idx) => {
-                        const day = idx + 1
-                        const active = recurDays.has(day)
-                        return (
-                          <button
-                            key={label}
-                            type="button"
-                            onClick={() =>
-                              setRecurDays((prev) => {
-                                const next = new Set(prev)
-                                if (next.has(day)) next.delete(day)
-                                else next.add(day)
-                                return next
-                              })
-                            }
-                            aria-pressed={active}
-                            className={cn(
-                              'h-8 w-11 rounded-lg text-xs font-semibold transition',
-                              active
-                                ? 'bg-brand-600 text-white shadow-sm'
-                                : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100'
-                            )}
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {!(recurFreq === 'WEEKLY' && recurDays.size > 0) && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <label htmlFor="t-recur-int" className="w-16 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Every
-                    </label>
-                    <Input
-                      id="t-recur-int"
-                      type="number"
-                      min={1}
-                      max={99}
-                      value={recurInterval}
-                      onChange={(e) => setRecurInterval(Math.max(1, Math.min(99, Math.floor(Number(e.target.value) || 1))))}
-                      className="w-20"
-                    />
-                    <span className="text-sm text-slate-600">
-                      {RECUR_UNIT[recurFreq]}
-                      {recurInterval > 1 ? 's' : ''}
-                    </span>
-                    {recurFreq === 'WEEKLY' && (
-                      <span className="text-xs text-slate-400">— or pick repeat days above</span>
-                    )}
-                  </div>
-                )}
-                {recurFreq === 'WEEKLY' && recurDays.size > 0 && (
-                  <p className="text-xs text-slate-500">
-                    The task will repeat <span className="font-semibold text-slate-700">every week</span> on the selected days.
-                  </p>
-                )}
-
-                {recurFreq === 'MONTHLY' && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <label htmlFor="t-recur-monthday" className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      On day
-                    </label>
-                    <Input
-                      id="t-recur-monthday"
-                      type="number"
-                      min={1}
-                      max={31}
-                      placeholder="—"
-                      value={recurMonthDay}
-                      onChange={(e) => {
-                        const v = e.target.value.replace(/\D/g, '')
-                        setRecurMonthDay(v === '' ? '' : String(Math.min(31, Math.max(1, Math.floor(Number(v) || 1)))))
-                      }}
-                      className="w-20"
-                    />
-                    <span className="text-xs text-slate-400">
-                      of the month — leave empty to reuse the due date's day
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <span className="w-16 text-xs font-semibold uppercase tracking-wide text-slate-500">Ends</span>
-                  <div className="flex gap-1 rounded-lg bg-white p-1 ring-1 ring-slate-200">
-                    {(
-                      [
-                        { value: 'NEVER', label: 'Never' },
-                        { value: 'ON_DATE', label: 'On date' },
-                        { value: 'AFTER_N', label: 'After N times' },
-                      ] as { value: RecurEndType; label: string }[]
-                    ).map((o) => (
-                      <button
-                        key={o.value}
-                        type="button"
-                        onClick={() => setRecurEndType(o.value)}
-                        aria-pressed={recurEndType === o.value}
-                        className={cn(
-                          'rounded-md px-3 py-1 text-xs font-semibold transition',
-                          recurEndType === o.value ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-                        )}
-                      >
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                  {recurEndType === 'ON_DATE' && (
-                    <Input
-                      type="date"
-                      value={recurEndDate}
-                      min={date || undefined}
-                      onChange={(e) => setRecurEndDate(e.target.value)}
-                      className="w-40"
-                      aria-label="Series end date"
-                    />
-                  )}
-                  {recurEndType === 'AFTER_N' && (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        min={2}
-                        max={52}
-                        value={recurCount}
-                        onChange={(e) => setRecurCount(Math.max(2, Math.min(52, Math.floor(Number(e.target.value) || 2))))}
-                        className="w-20"
-                        aria-label="Number of occurrences"
-                      />
-                      <span className="text-sm text-slate-600">times total</span>
-                    </div>
-                  )}
-                </div>
-
-                <p className="flex items-center gap-1.5 border-t border-slate-200 pt-2.5 text-xs text-slate-500">
-                  <Repeat className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />
-                  <span>
-                    Schedule:{' '}
-                    <span className="font-semibold text-slate-700">
-                      {recurrenceLabel({
-                        recurring: true,
-                        recurFreq,
-                        recurInterval: recurFreq === 'WEEKLY' && recurDays.size > 0 ? 1 : recurInterval,
-                        recurWeekdays: recurFreq === 'WEEKLY' ? [...recurDays].join(',') : null,
-                        recurMonthDay: recurFreq === 'MONTHLY' && recurMonthDay ? Number(recurMonthDay) : null,
-                      }) ?? '—'}
-                    </span>
-                  </span>
-                </p>
-              </div>
-            )}
-          </div>
+          <RecurrenceFields value={recur} onChange={(patch) => setRecur((prev) => ({ ...prev, ...patch }))} />
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
