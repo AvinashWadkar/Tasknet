@@ -24,6 +24,8 @@ export interface SessionUser {
   teamScope: 'ALL' | 'DIRECT'
   isManager: boolean
   permissions: PermissionMap
+  /** True once the employee has submitted the one-time feedback survey. */
+  surveySubmitted: boolean
 }
 
 /** Create a signed session token for a user id */
@@ -62,7 +64,10 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     const { payload } = await jwtVerify(token, SECRET)
     const uid = payload.uid as string
     if (!uid) return null
-    const user = await db.user.findUnique({ where: { id: uid } })
+    const user = await db.user.findUnique({
+      where: { id: uid },
+      include: { surveyResponse: { select: { id: true } } },
+    })
     if (!user || !user.isActive) return null
     const manager = await isManagerOf(user.id)
     return {
@@ -79,6 +84,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       teamScope: user.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
       isManager: manager,
       permissions: resolvePermissions(user.role, manager, user.permissions),
+      surveySubmitted: Boolean(user.surveyResponse),
     }
   } catch {
     return null

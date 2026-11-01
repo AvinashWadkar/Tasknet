@@ -18,6 +18,8 @@ export interface Me {
   teamScope?: 'ALL' | 'DIRECT'
   isManager?: boolean
   permissions?: PermissionMap
+  /** True once the employee has submitted the one-time feedback survey. */
+  surveySubmitted?: boolean
 }
 
 export interface AssigneeUser {

@@ -30,6 +30,7 @@ export async function PATCH(req: Request) {
   const updated = await db.user.update({
     where: { id: session.id },
     data: { teamScope },
+    include: { surveyResponse: { select: { id: true } } },
   })
 
   const manager = await isManager(updated.id)
@@ -49,6 +50,7 @@ export async function PATCH(req: Request) {
       teamScope: updated.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
       isManager: manager,
       permissions: resolvePermissions(updated.role, manager, updated.permissions),
+      surveySubmitted: Boolean(updated.surveyResponse),
     },
   })
 }

@@ -21,6 +21,8 @@ import { TeamView } from './team-view'
 import { ReportsView } from './reports-view'
 import { AdminPanel } from './admin-panel'
 import { AdminUsageView } from './admin-usage-view'
+import { AdminFeedbackView } from './admin-feedback-view'
+import { FeedbackSurvey } from './feedback-survey'
 import { NotificationBell } from './notification-bell'
 import { AppDownloadButton } from './app-download-button'
 import { NotificationGate } from './notification-gate'
@@ -55,9 +57,10 @@ import {
   CheckCircle2,
   Sparkles,
   KeyRound,
+  MessageSquare,
 } from 'lucide-react'
 
-type View = 'home' | 'calendar' | 'team' | 'reports' | 'admin'
+type View = 'home' | 'calendar' | 'team' | 'reports' | 'admin' | 'feedback'
 
 export function TaskManagerApp() {
   const { toast } = useToast()
@@ -93,6 +96,10 @@ export function TaskManagerApp() {
   // notifications keeps being asked and cannot use the app until they do.
   useEffect(() => {
     if (!me) return
+    // Mandatory gates run in order: set password → submit the feedback survey
+    // → allow notifications. Do not ask for notifications behind another modal.
+    if (me.isFirstLogin) return
+    if (me.role !== 'ADMIN' && !me.surveySubmitted) return
     if (typeof window === 'undefined') return
     // Inside the Android shell the native activity owns the permission dialog,
     // so the browser gate must not also appear.
@@ -235,6 +242,7 @@ export function TaskManagerApp() {
   const canViewReports = me.permissions?.viewReports ?? (Boolean(me.isManager) || me.role === 'ADMIN')
   const canManageUsers = me.permissions?.manageUsers ?? me.role === 'ADMIN'
   const canCreateTasks = me.permissions?.createTasks ?? true
+  const needsSurvey = me.role !== 'ADMIN' && !me.surveySubmitted
 
   const navItems: { key: View; label: string; icon: typeof LayoutDashboard; show: boolean }[] = [
     { key: 'home', label: 'Home', icon: LayoutDashboard, show: true },
@@ -242,6 +250,7 @@ export function TaskManagerApp() {
     { key: 'team', label: 'Team View', icon: Network, show: canViewTeam },
     { key: 'reports', label: 'Reports', icon: BarChart3, show: canViewReports },
     { key: 'admin', label: 'Admin', icon: ShieldCheck, show: canManageUsers },
+    { key: 'feedback', label: 'Feedback', icon: MessageSquare, show: me.role === 'ADMIN' },
   ]
 
   return (
@@ -416,6 +425,7 @@ export function TaskManagerApp() {
           />
         )}
         {view === 'admin' && canManageUsers && <AdminUsageView refreshKey={refreshKey} />}
+        {view === 'feedback' && me.role === 'ADMIN' && <AdminFeedbackView refreshKey={refreshKey} />}
       </main>
 
       {/* Footer — sticky to bottom via flex column + mt-auto */}
@@ -475,8 +485,30 @@ export function TaskManagerApp() {
         }
       />
 
-      {/* Mandatory first-login notification gate (rendered behind the password modal) */}
-      {notifGateOpen && <NotificationGate open onDone={() => setNotifGateOpen(false)} />}
+      {/* Mandatory notification gate — only after password + survey are done */}
+      {!me.isFirstLogin && !needsSurvey && notifGateOpen && (
+        <NotificationGate open onDone={() => setNotifGateOpen(false)} />
+      )}
+
+      {/* Mandatory one-time employee feedback survey (employees only) */}
+      {!me.isFirstLogin && needsSurvey && (
+        <FeedbackSurvey
+          name={me.name}
+          onDone={() => {
+            setMe({ ...me, surveySubmitted: true })
+            toast({
+              title: (
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Thank you for your feedback
+                </span>
+              ),
+              description: 'Your response has been recorded — it can only be submitted once.',
+            })
+            bumpRefresh()
+          }}
+          onLogout={logout}
+        />
+      )}
 
       {/* Mandatory first-login password modal */}
       {me.isFirstLogin && (

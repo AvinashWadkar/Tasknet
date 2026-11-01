@@ -37,6 +37,7 @@ model User {
   notifications            Notification[]
   pushSubscriptions        PushSubscription[]
   pushDevices              PushDevice[]
+  surveyResponse           SurveyResponse?
   isActive                 Boolean            @default(true)
   createdAt                DateTime           @default(now())
   updatedAt                DateTime           @updatedAt
@@ -123,8 +124,6 @@ model Task {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
-  @@index([validatorId])
-
   // Recurring series — the next occurrence is auto-created when every
   // assignee completes this task (aborting ends the series)
   recurring       Boolean   @default(false)
@@ -144,6 +143,7 @@ model Task {
   reminder1hSentAt  DateTime?
   reminder15mSentAt DateTime?
 
+  @@index([validatorId])
   @@index([dueDate])
   @@index([createdById])
   @@index([rootTaskId])
@@ -154,21 +154,21 @@ model Task {
 // status: PENDING | IN_PROGRESS | COMPLETED
 // ─────────────────────────────────────────────────────────────
 model TaskAssignment {
-  id          String    @id @default(cuid())
-  taskId      String
-  userId      String
-  status      String    @default("PENDING")
-  completedAt DateTime?
-  note        String?
+  id                  String    @id @default(cuid())
+  taskId              String
+  userId              String
+  status              String    @default("PENDING")
+  completedAt         DateTime?
+  note                String?
   // Validation/collation state (only meaningful when the task has a validator):
   // NOT_REQUIRED = no validator on the task; PENDING = sent, awaiting review;
   // VALIDATED = the validator approved this part.
   validationStatus    String    @default("NOT_REQUIRED")
   sentForValidationAt DateTime?
   validatedAt         DateTime?
-  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  updatedAt   DateTime  @updatedAt
+  task                Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt           DateTime  @updatedAt
 
   @@unique([taskId, userId])
   @@index([userId])
@@ -230,15 +230,39 @@ model PushSubscription {
 // Native (APK) delivery targets: FCM registration tokens per app install.
 // Used when the employee has the Android app; web push stays the fallback.
 model PushDevice {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token      String   @unique
   platform   String   @default("android")
   appVersion String?
   active     Boolean  @default(true)
   createdAt  DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt  DateTime @updatedAt
 
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// SurveyResponse: the one-time employee feedback survey.
+// userId is @unique — the database itself enforces "submit only once".
+// Five 1–5 ratings are mandatory; the three comment fields are optional.
+// ADMIN accounts are exempt from the survey (see /api/survey).
+// ─────────────────────────────────────────────────────────────
+model SurveyResponse {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  overall       Int // Overall satisfaction (1–5)
+  easeOfUse     Int // Ease of use (1–5)
+  taskClarity   Int // Staying on top of tasks (1–5)
+  notifications Int // Notification usefulness (1–5)
+  recommend     Int // Would recommend Tasknet (1–5)
+  likedMost     String? // "What do you like most?"
+  improvements  String? // "What should we improve?"
+  comments      String? // "Anything else?"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([createdAt])
 }

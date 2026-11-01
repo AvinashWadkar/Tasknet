@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
     }
     const user = await db.user.findFirst({
       where: { employeeCode: { equals: String(employeeCode).trim() } },
+      include: { surveyResponse: { select: { id: true } } },
     })
     if (!user || !user.isActive) {
       return NextResponse.json({ error: 'Invalid Employee Code or Password' }, { status: 401 })
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
         teamScope: user.teamScope === 'DIRECT' ? 'DIRECT' : 'ALL',
         isManager: manager,
         permissions: resolvePermissions(user.role, manager, user.permissions),
+        surveySubmitted: Boolean(user.surveyResponse),
       },
     })
   } catch (e) {
