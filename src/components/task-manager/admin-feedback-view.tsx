@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
-import { api } from './api'
+import { api, downloadFile } from './api'
 import { InitialAvatar } from './shared'
 import { fmtDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
@@ -32,6 +32,7 @@ import {
   Download,
   Gauge,
   MessageSquare,
+  Presentation,
   Smile,
   Sparkles,
   Star,
@@ -228,6 +229,7 @@ export function AdminFeedbackView({ refreshKey }: { refreshKey: number }) {
   const [data, setData] = React.useState<SurveyReport | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
+  const [deckExporting, setDeckExporting] = React.useState(false)
   const [showAllResponses, setShowAllResponses] = React.useState(false)
   const [pendingOpen, setPendingOpen] = React.useState(false)
 
@@ -272,20 +274,10 @@ export function AdminFeedbackView({ refreshKey }: { refreshKey: number }) {
   const exportReport = async () => {
     setExporting(true)
     try {
-      const res = await fetch('/api/survey/report/export', { cache: 'no-store' })
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(j.error || `Export failed (${res.status})`)
-      }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Tasknet-Feedback-${new Date().toISOString().slice(0, 10)}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
+      await downloadFile(
+        '/api/survey/report/export',
+        `Tasknet-Feedback-${new Date().toISOString().slice(0, 10)}.xlsx`
+      )
       toast({
         title: (
           <span className="inline-flex items-center gap-1.5">
@@ -298,6 +290,28 @@ export function AdminFeedbackView({ refreshKey }: { refreshKey: number }) {
       toast({ title: 'Export failed', description: e instanceof Error ? e.message : 'Please try again.' })
     } finally {
       setExporting(false)
+    }
+  }
+
+  const exportDeck = async () => {
+    setDeckExporting(true)
+    try {
+      await downloadFile(
+        '/api/admin/pitch-deck',
+        `Tasknet-Management-Deck-${new Date().toISOString().slice(0, 10)}.pptx`
+      )
+      toast({
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Pitch deck downloaded
+          </span>
+        ),
+        description: 'A ready-to-present PowerPoint for management, built from this feedback and live usage.',
+      })
+    } catch (e) {
+      toast({ title: 'Could not build the deck', description: e instanceof Error ? e.message : 'Please try again.' })
+    } finally {
+      setDeckExporting(false)
     }
   }
 
@@ -317,14 +331,30 @@ export function AdminFeedbackView({ refreshKey }: { refreshKey: number }) {
             </p>
           </div>
         </div>
-        <Button onClick={exportReport} disabled={exporting || !data} className="shadow-sm">
-          {exporting ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
-          ) : (
-            <Download className="h-4 w-4" aria-hidden="true" />
-          )}
-          Export Excel
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={exportDeck}
+            disabled={deckExporting || !data}
+            className="shadow-sm"
+            title="PowerPoint deck that pitches Tasknet to management using live adoption and feedback data"
+          >
+            {deckExporting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" aria-hidden="true" />
+            ) : (
+              <Presentation className="h-4 w-4" aria-hidden="true" />
+            )}
+            Pitch deck (PPTX)
+          </Button>
+          <Button onClick={exportReport} disabled={exporting || !data} className="shadow-sm">
+            {exporting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
+            ) : (
+              <Download className="h-4 w-4" aria-hidden="true" />
+            )}
+            Export Excel
+          </Button>
+        </div>
       </div>
 
       {/* Headline insight */}

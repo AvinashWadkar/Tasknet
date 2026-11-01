@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
-import { api } from './api'
+import { api, downloadFile } from './api'
 import { InitialAvatar } from './shared'
 import { UsageDrillDialog, EmployeeUsageDialog, type DrillState, type DrillRow, type UsageEmployee } from './usage-drill-dialog'
 import { cn } from '@/lib/utils'
@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Download,
   GraduationCap,
+  Presentation,
   ShieldCheck,
   Smartphone,
   TrendingUp,
@@ -175,6 +176,7 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
   const [data, setData] = React.useState<UsageResponse | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
+  const [deckExporting, setDeckExporting] = React.useState(false)
   const [drill, setDrill] = React.useState<DrillState | null>(null)
   const [empDetail, setEmpDetail] = React.useState<UsageEmployee | null>(null)
   const reqIdRef = React.useRef(0)
@@ -288,20 +290,10 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
   const exportUsage = async () => {
     setExporting(true)
     try {
-      const res = await fetch(`/api/admin/usage/export?days=${days}`, { cache: 'no-store' })
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(j.error || `Export failed (${res.status})`)
-      }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `Tasknet-Usage-${new Date().toISOString().slice(0, 10)}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
+      await downloadFile(
+        `/api/admin/usage/export?days=${days}`,
+        `Tasknet-Usage-${new Date().toISOString().slice(0, 10)}.xlsx`
+      )
       toast({
         title: (
           <span className="inline-flex items-center gap-1.5">
@@ -314,6 +306,28 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
       toast({ title: 'Export failed', description: e instanceof Error ? e.message : 'Please try again.' })
     } finally {
       setExporting(false)
+    }
+  }
+
+  const exportDeck = async () => {
+    setDeckExporting(true)
+    try {
+      await downloadFile(
+        `/api/admin/pitch-deck?days=${days}`,
+        `Tasknet-Management-Deck-${new Date().toISOString().slice(0, 10)}.pptx`
+      )
+      toast({
+        title: (
+          <span className="inline-flex items-center gap-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Pitch deck downloaded
+          </span>
+        ),
+        description: 'A ready-to-present PowerPoint for management, built from live usage and employee feedback.',
+      })
+    } catch (e) {
+      toast({ title: 'Could not build the deck', description: e instanceof Error ? e.message : 'Please try again.' })
+    } finally {
+      setDeckExporting(false)
     }
   }
 
@@ -350,6 +364,20 @@ export function AdminUsageView({ refreshKey }: { refreshKey: number }) {
               </button>
             ))}
           </div>
+          <Button
+            variant="outline"
+            onClick={exportDeck}
+            disabled={deckExporting || !hasData}
+            className="shadow-sm"
+            title="PowerPoint deck that pitches Tasknet to management using live adoption and feedback data"
+          >
+            {deckExporting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" aria-hidden="true" />
+            ) : (
+              <Presentation className="h-4 w-4" aria-hidden="true" />
+            )}
+            Pitch deck (PPTX)
+          </Button>
           <Button onClick={exportUsage} disabled={exporting || !hasData} className="shadow-sm">
             {exporting ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
