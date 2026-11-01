@@ -74,6 +74,15 @@ export function TaskManagerApp() {
   const [navOpen, setNavOpen] = useState(false)
   const [notifGateOpen, setNotifGateOpen] = useState(false)
   const [changePwOpen, setChangePwOpen] = useState(false)
+  // Authoritative survey status, re-read from the server on every login and
+  // whenever the user comes back to the app. Tagged with the user id so one
+  // employee's status can never leak into the next login on the same device.
+  const [surveyStatus, setSurveyStatus] = useState<{
+    userId: string
+    eligible: boolean
+    submitted: boolean
+  } | null>(null)
+  const [surveyCheckedFor, setSurveyCheckedFor] = useState<string | null>(null)
 
   const loadMe = useCallback(async () => {
     try {
@@ -90,6 +99,36 @@ export function TaskManagerApp() {
     loadMe()
   }, [loadMe])
 
+  const checkSurvey = useCallback(async (userId: string) => {
+    try {
+      const r = await api<{ eligible: boolean; submitted: boolean }>('/api/survey')
+      setSurveyStatus({ userId, ...r })
+    } catch {
+      // The profile snapshot is the fallback when the check cannot be reached.
+      setSurveyStatus(null)
+    } finally {
+      setSurveyCheckedFor(userId)
+    }
+  }, [])
+
+  // Check the survey status on every login, and again whenever the user
+  // returns to the tab, so a pending employee keeps being asked.
+  useEffect(() => {
+    if (!me) return
+    const userId = me.id
+    void checkSurvey(userId)
+    if (typeof window === 'undefined') return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void checkSurvey(userId)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [me, checkSurvey])
+
   // On every open — initial load, returning to the tab, and refocusing the
   // window — re-check the browser notification permission. While it is not
   // granted the mandatory gate is forced, so a user who never allowed
@@ -99,7 +138,11 @@ export function TaskManagerApp() {
     // Mandatory gates run in order: set password → submit the feedback survey
     // → allow notifications. Do not ask for notifications behind another modal.
     if (me.isFirstLogin) return
-    if (me.role !== 'ADMIN' && !me.surveySubmitted) return
+    const mySurvey = surveyStatus && surveyStatus.userId === me.id ? surveyStatus : null
+    const surveyPending =
+      me.role !== 'ADMIN' &&
+      (mySurvey ? mySurvey.eligible && !mySurvey.submitted : !me.surveySubmitted)
+    if (surveyPending) return
     if (typeof window === 'undefined') return
     // Inside the Android shell the native activity owns the permission dialog,
     // so the browser gate must not also appear.
@@ -120,7 +163,7 @@ export function TaskManagerApp() {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [me])
+  }, [me, surveyStatus])
 
   // Open a task when a push-notification click navigates to /?task=<id>.
   useEffect(() => {
@@ -198,6 +241,9 @@ export function TaskManagerApp() {
       setMe(null)
       setView('home')
       setDetailTaskId(null)
+      // Force a fresh status check for whoever logs in next on this device.
+      setSurveyStatus(null)
+      setSurveyCheckedFor(null)
     }
   }
 
@@ -211,7 +257,13 @@ export function TaskManagerApp() {
     bumpRefresh()
   }
 
-  if (loading) {
+  // Hold the app back until the survey status has been verified, so a pending
+  // employee is always asked before they can use anything.
+  const mySurvey = surveyStatus && surveyStatus.userId === me?.id ? surveyStatus : null
+  const surveyChecked = Boolean(me) && surveyCheckedFor === me?.id
+  const surveyStatusUnknown = me ? me.role !== 'ADMIN' && !me.isFirstLogin && !surveyChecked : false
+
+  if (loading || surveyStatusUnknown) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 via-white to-brand-100">
         <div className="flex flex-col items-center gap-3">
@@ -242,7 +294,12 @@ export function TaskManagerApp() {
   const canViewReports = me.permissions?.viewReports ?? (Boolean(me.isManager) || me.role === 'ADMIN')
   const canManageUsers = me.permissions?.manageUsers ?? me.role === 'ADMIN'
   const canCreateTasks = me.permissions?.createTasks ?? true
-  const needsSurvey = me.role !== 'ADMIN' && !me.surveySubmitted
+  // Pending unless the fresh server check (or the profile snapshot when the
+  // check is unavailable) says the employee has submitted. ADMIN accounts are
+  // exempt from the survey.
+  const needsSurvey =
+    me.role !== 'ADMIN' &&
+    (mySurvey ? mySurvey.eligible && !mySurvey.submitted : !me.surveySubmitted)
 
   const navItems: { key: View; label: string; icon: typeof LayoutDashboard; show: boolean }[] = [
     { key: 'home', label: 'Home', icon: LayoutDashboard, show: true },
@@ -496,6 +553,8 @@ export function TaskManagerApp() {
           name={me.name}
           onDone={() => {
             setMe({ ...me, surveySubmitted: true })
+            setSurveyStatus({ userId: me.id, eligible: true, submitted: true })
+            setSurveyCheckedFor(me.id)
             toast({
               title: (
                 <span className="inline-flex items-center gap-1.5">

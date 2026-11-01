@@ -718,3 +718,20 @@ Verified: `npx tsc --noEmit` (only the 4 pre-existing errors) + `npx eslint` cle
 
 Stage Summary:
 - Every employee now sees a one-time, non-dismissible feedback survey (five 1-5 ratings + three optional comments) on their first open after this release, enforced server-side by a unique `userId`, and admins have a new admin-only "Feedback" tab with KPIs, charts, per-process and per-response breakdowns, comment columns, a pending list and an Excel export to showcase the results to management. ADMIN accounts are exempt from filling it in.
+
+---
+
+Task ID: 39
+Agent: Z.ai Code (main)
+Task: "On every login it should check the survey status and if pending then should ask for review first."
+
+Work Log:
+- Web (`app.tsx`): the survey gate no longer trusts the profile snapshot alone. A new `checkSurvey(userId)` calls `GET /api/survey` for the authoritative `{ eligible, submitted }` status; it runs on every `me` change (so every login and session restore) and again on `visibilitychange`/`focus` when the tab becomes visible, so a pending employee keeps being asked.
+- The status state is tagged with the employee id (`surveyStatus.userId`, `surveyCheckedFor`) and the derived helpers only accept a status that belongs to the signed-in user, so one employee's result can never leak into the next login on the same device. Logout clears both, forcing a fresh check for whoever signs in next.
+- Boot hold: for non-admin, non-first-login users the app keeps the branded spinner until `surveyCheckedFor === me.id`, so the survey (when pending) is rendered before any other gate or content. If the check fails the profile snapshot (`me.surveySubmitted`) is the fallback and the spinner is released - the app never hangs on a failed request.
+- Gate ordering unchanged: set password -> feedback survey -> notifications. The notification gate now uses the same fresh status (`eligible && !submitted`) so it cannot open behind the survey. Submitting the survey sets the local status to submitted, so the notification gate can run immediately after.
+
+Verified: `npx tsc --noEmit` (only the 4 pre-existing errors) + `npx eslint` clean on `app.tsx` and `feedback-survey.tsx`; `npx next build` compiled. Live E2E on the standalone server (PORT 3311, real Neon DB): employee 412760 login showed the survey dialog immediately with exactly one dialog (no notification gate behind it), Escape and outside-click did not dismiss it, the Logout escape hatch worked, and a second login re-asked the survey (25 rating buttons = 5 questions x 5, 3 `/api/survey` requests observed, no console errors). DB left clean afterwards: `surveyRows=0 eligible=23`. Browser tab, server process and temp script cleaned up.
+
+Stage Summary:
+- The survey status is now verified with the server on every login (and on refocus), and the app waits for that check before showing anything, so an employee with a pending survey is always asked to complete it first - while admins stay exempt and submitted employees go straight into the app.
